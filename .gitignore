@@ -1,0 +1,26 @@
+# Python
+__pycache__/
+*.pyc
+*.pyo
+
+# Segredos (NUNCA versionar)
+.streamlit/secrets.toml
+.perfil_gov/
+.chrome_perfil/
+
+# Saídas geradas em runtime
+saidas/
+*.log
+streamlit_log.txt
+
+# Dados das RPPNs — contêm nomes de proprietários (dados pessoais).
+# Mantidos fora do repositório enquanto o app for PÚBLICO (sem login).
+# Serão versionados na Fase 2, junto com a autenticação.
+dados/
+
+# Material de referência pesado (não é usado pelo app)
+modelo_ref.pdf
+modelo_ref_p1.png
+
+# Scripts de teste locais
+_teste_*.py

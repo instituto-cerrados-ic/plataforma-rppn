@@ -1,0 +1,12 @@
+# Tema Programa Jurema / Instituto Cerrados (paleta oficial do guia de marca).
+# NÃO fixar [server] port aqui (quebra o health check do Streamlit Community
+# Cloud — padrão #29 da skill). Porta local via CLI.
+[server]
+enableStaticServing = true
+
+[theme]
+primaryColor = "#004F23"
+backgroundColor = "#FCFAF4"
+secondaryBackgroundColor = "#F1EBDD"
+textColor = "#1A1A1A"
+font = "sans serif"

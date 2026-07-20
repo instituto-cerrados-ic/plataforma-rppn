@@ -13,10 +13,10 @@ saidas/
 *.log
 streamlit_log.txt
 
-# Dados das RPPNs — contêm nomes de proprietários (dados pessoais).
-# Mantidos fora do repositório enquanto o app for PÚBLICO (sem login).
-# Serão versionados na Fase 2, junto com a autenticação.
-dados/
+# Dados das RPPNs — versionados (app protegido por login @cerrados.org).
+# Só os arquivos temporários de geração ficam de fora:
+dados/*.gpkg
+dados/_*
 
 # Material de referência pesado (não é usado pelo app)
 modelo_ref.pdf

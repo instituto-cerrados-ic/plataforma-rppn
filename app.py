@@ -121,6 +121,32 @@ if not st.config.get_option("server.enableStaticServing"):
         st.caption("Dica: reinicie o servidor (Ctrl+C e rodar de novo) para o guia "
                    "abrir direto do cabeçalho, sem download.")
 
+# --- Autenticação: acesso restrito a contas @cerrados.org ------------------
+DOMINIO = "@cerrados.org"
+try:
+    _tem_auth = "auth" in st.secrets
+except Exception:
+    _tem_auth = False
+if _tem_auth:
+    if not st.user.is_logged_in:
+        c = st.columns([1, 2, 1])[1]
+        with c:
+            st.markdown("### Acesso restrito")
+            st.write(f"Entre com sua conta **{DOMINIO}** para acessar a "
+                     "Plataforma RPPN.")
+            st.button("Entrar com Google", type="primary", on_click=st.login,
+                      icon=":material/login:")
+            st.caption("Ferramenta interna do Instituto Cerrados · Programa Jurema.")
+        st.stop()
+    if not str(st.user.email or "").lower().endswith(DOMINIO):
+        st.error(f"Acesso restrito a contas {DOMINIO}. A conta "
+                 f"**{st.user.email}** não tem permissão.")
+        st.button("Sair", on_click=st.logout, icon=":material/logout:")
+        st.stop()
+    with st.sidebar:
+        st.caption(f"Conectado: {st.user.email}")
+        st.button("Sair", on_click=st.logout, icon=":material/logout:")
+
 # ícones SVG (profissionais, sem emoji)
 _SVG = {
     "draw": f'<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="{VERDE}" stroke-width="2"><path d="M12 19l7-7 3 3-7 7-3-3z"/><path d="M18 13l-1.5-7.5L2 2l3.5 14.5L13 18l5-5z"/><circle cx="11" cy="11" r="2"/></svg>',

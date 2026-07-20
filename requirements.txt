@@ -1,7 +1,9 @@
 # Plataforma RPPN — Instituto Cerrados
 # numpy pinado explicitamente (padrão #30 da skill: evita Segmentation fault
 # quando o Streamlit Cloud reinstala o ambiente e o resolvedor troca a ABI).
-streamlit>=1.40
+streamlit>=1.42
+httpx>=0.27
+Authlib>=1.3
 folium>=0.17
 streamlit-folium>=0.23
 geopandas==1.1.4

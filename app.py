@@ -426,29 +426,20 @@ abas = st.tabs([
 ])
 
 
-def _publicar_arquivos(arquivos: dict[str, str], mensagem: str, dados_dir: Path) -> bool:
-    """Grava no GitHub (token nos secrets → o Streamlit Cloud republica) ou
-    localmente (desenvolvimento). Usado pela sincronização e pelos processos."""
-    import sync_ingest as _SI
-    try:
-        _gh = st.secrets["github"] if "github" in st.secrets else None
-    except Exception:
-        _gh = None
-    if _gh and _gh.get("token"):
-        with st.spinner("Publicando no GitHub…"):
-            try:
-                _SI.gravar_github(_gh["token"], _gh.get("repo", "instituto-cerrados-ic/plataforma-rppn"),
-                                  _gh.get("branch", "main"), arquivos, mensagem)
-            except Exception as e:
-                st.error(f"Falha ao publicar no GitHub: {e}")
-                return False
-        st.success("Publicado! A plataforma vai **reiniciar em 1–2 minutos** já com os dados novos.")
-        return True
-    for caminho, conteudo in arquivos.items():
-        alvo = dados_dir.parent / caminho
-        alvo.parent.mkdir(parents=True, exist_ok=True)
-        alvo.write_text(conteudo, encoding="utf-8")
-    st.success("Gravado localmente (sem token do GitHub configurado).")
+import dados_remotos as DR
+DR = importlib.reload(DR)
+
+
+def _publicar_arquivos(arquivos: dict[str, str], mensagem: str) -> bool:
+    """Grava {nome: conteúdo} no repositório privado de dados (token nos secrets)
+    ou na pasta local dados/ (desenvolvimento). A tela vê o resultado na hora."""
+    with st.spinner("Gravando…"):
+        try:
+            onde = DR.gravar(arquivos, mensagem)
+        except Exception as e:
+            st.error(f"Falha ao gravar: {e}")
+            return False
+    st.success(f"Pronto — {onde}.")
     return True
 
 # --- 1. RPPN ---------------------------------------------------------------
@@ -818,12 +809,12 @@ with abas[7]:
     import processos as PR
     PR = importlib.reload(PR)
     DADOS = Path(__file__).resolve().parent / "dados"
-    arq_proc = DADOS / "processos.json"
     _quem = (st.user.email if _tem_auth and st.user.is_logged_in else "local")
     _quem_curto = _quem.split("@")[0]
 
     if "proc_base" not in ss:
-        ss.proc_base = PR.carregar(arq_proc)
+        ss.proc_base = DR.carregar("processos.json") or {
+            "versao": PR.VERSAO, "atualizado_em": "", "por": "", "processos": []}
         ss.proc_sujo = False
     base_p = ss.proc_base
     procs = base_p["processos"]
@@ -848,8 +839,8 @@ with abas[7]:
             st.warning("Há alterações não gravadas.", icon=":material/edit_note:")
         if st.button("Gravar alterações", type="primary", icon=":material/save:",
                      disabled=not ss.proc_sujo, use_container_width=True, key="proc_salvar"):
-            ok = _publicar_arquivos({"dados/processos.json": PR.serializar(base_p, _quem)},
-                                    f"Processos de RPPN atualizados ({_quem})", DADOS)
+            ok = _publicar_arquivos({"processos.json": PR.serializar(base_p, _quem)},
+                                    f"Processos de RPPN atualizados ({_quem})")
             if ok:
                 ss.proc_sujo = False
 
@@ -935,9 +926,8 @@ with abas[7]:
                                           nv_ini.strftime(PR.FMT)))
             _marcar_sujo()
             st.rerun()
-        arq_json_s = DADOS / "rppns.json"
-        if arq_json_s.exists():
-            _rp = json.load(open(arq_json_s, encoding="utf-8")).get("rppns", [])
+        _rp = (DR.carregar("rppns.json") or {}).get("rppns", [])
+        if _rp:
             sug = PR.a_partir_do_simrppn(_rp, procs)
             if sug:
                 st.markdown(f"**{len(sug)} RPPN(s) em trâmite no SIMRPPN ainda sem ficha de "
@@ -1061,15 +1051,13 @@ with abas[8]:
     import altair as alt
     st.subheader("Administrar — RPPNs do Instituto Cerrados")
     DADOS = Path(__file__).resolve().parent / "dados"
-    arq_json = DADOS / "rppns.json"
-    arq_geo = DADOS / "rppns.geojson"
 
     # ---- Sincronizar com o SIMRPPN — por qualquer pessoa, de qualquer máquina ----
     import streamlit.components.v1 as components
     from urllib.parse import quote
     import sync_ingest as SI
     SI = importlib.reload(SI)
-    _meta = json.load(open(arq_json, encoding="utf-8")) if arq_json.exists() else {}
+    _meta = DR.carregar("rppns.json") or {}
     with st.expander("Sincronizar com o SIMRPPN", expanded=False, icon=":material/sync:"):
         if _meta.get("sincronizado_em"):
             st.caption(f"Última sincronização: **{_meta['sincronizado_em']}**"
@@ -1115,7 +1103,7 @@ with abas[8]:
                 st.error("**Arquivo inválido:**\n\n- " + "\n- ".join(_erros))
             else:
                 _por = (st.user.email if _tem_auth and st.user.is_logged_in else "local")
-                _geo_antigo = json.load(open(arq_geo, encoding="utf-8")) if arq_geo.exists() else None
+                _geo_antigo = DR.carregar("rppns.geojson")
                 _rj, _gj, _st = SI.processar(_payload, por=_por, base_atual=_meta or None,
                                              geo_atual=_geo_antigo)
                 _dif = SI.comparar(_meta or None, _rj, _geo_antigo, _gj)
@@ -1142,25 +1130,10 @@ with abas[8]:
                     st.warning("Com erro na coleta (confira no SIMRPPN): " + ", ".join(map(str, _st["com_erro_coleta"])))
                 if st.button("Confirmar e publicar", type="primary", icon=":material/cloud_upload:",
                              key="sync_pub"):
-                    try:
-                        _gh = st.secrets["github"] if "github" in st.secrets else None
-                    except Exception:
-                        _gh = None
-                    _arqs = {"dados/rppns.json": json.dumps(_rj, ensure_ascii=False, indent=1),
-                             "dados/rppns.geojson": json.dumps(_gj, ensure_ascii=False)}
-                    if _gh and _gh.get("token"):
-                        with st.spinner("Publicando no GitHub…"):
-                            try:
-                                SI.gravar_github(_gh["token"], _gh.get("repo", "instituto-cerrados-ic/plataforma-rppn"),
-                                                 _gh.get("branch", "main"), _arqs,
-                                                 f"Sincroniza RPPNs via plataforma ({_rj['sincronizado_em']}, {_por})")
-                                st.success("Publicado! A plataforma vai **reiniciar em 1–2 minutos** já com os "
-                                           "dados novos. Pode fechar esta página.")
-                            except Exception as e:
-                                st.error(f"Falha ao publicar no GitHub: {e}")
-                    else:
-                        SI.gravar_local(DADOS, _rj, _gj)
-                        st.success("Dados gravados localmente (sem token do GitHub configurado).")
+                    _arqs = {"rppns.json": json.dumps(_rj, ensure_ascii=False, indent=1),
+                             "rppns.geojson": json.dumps(_gj, ensure_ascii=False)}
+                    if _publicar_arquivos(_arqs, f"Sincroniza RPPNs via plataforma ({_rj['sincronizado_em']}, {_por})"):
+                        ss.pop("sync_up", None)
                         st.rerun()
 
     # cores diversificadas na identidade Jurema/IC
@@ -1169,13 +1142,10 @@ with abas[8]:
     PALETA_UF = ["#004F23", "#E85718", "#E00080", "#603010", "#B8860B",
                  "#2E7D32", "#DDCCA4"]
 
-    if not arq_json.exists():
-        st.warning("Ainda não há dados coletados. Rode o coletor com o Chrome "
-                   "logado no SIMRPPN:")
-        st.code("abrir_chrome_debug.bat        (logar no gov.br)\n"
-                "python coletar_rppns.py       (captura tudo, somente leitura)")
+    base = _meta
+    if not base.get("rppns"):
+        st.warning("Ainda não há dados de RPPNs. Use **Sincronizar com o SIMRPPN** acima.")
     else:
-        base = json.load(open(arq_json, encoding="utf-8"))
         df = pd.DataFrame(base["rppns"])
         for col in ["proprietario", "municipio", "data_criacao",
                     "data_cadastro", "data_ato", "pagina"]:
@@ -1186,8 +1156,7 @@ with abas[8]:
         # defesa: município que veio como dropdown gigante (com quebras) -> limpa
         df["municipio"] = df["municipio"].astype(str).apply(
             lambda s: "" if ("\n" in s or len(s) > 50) else s)
-        st.caption(f"Fonte: {base.get('fonte','')} · Para atualizar: "
-                   "`abrir_chrome_debug.bat` (logado) e `python coletar_rppns.py`.")
+        st.caption(f"Fonte: {base.get('fonte','')} · armazenamento: {DR.origem()}.")
 
         # ---- filtros (card) ----
         with st.container(border=True):
@@ -1291,8 +1260,8 @@ with abas[8]:
                 tiles="https://server.arcgisonline.com/ArcGIS/rest/services/"
                       "World_Imagery/MapServer/tile/{z}/{y}/{x}",
                 attr="Esri World Imagery", name="Satélite").add_to(madm)
-            if arq_geo.exists():
-                gj = json.load(open(arq_geo, encoding="utf-8"))
+            gj = DR.carregar("rppns.geojson")
+            if gj:
                 ids_visiveis = set(v["rppnid"].dropna().astype(int).tolist()) \
                     if "rppnid" in v else set()
                 feats_v = [f for f in gj["features"]

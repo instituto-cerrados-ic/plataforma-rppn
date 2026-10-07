@@ -13,10 +13,11 @@ saidas/
 *.log
 streamlit_log.txt
 
-# Dados das RPPNs — versionados (app protegido por login @cerrados.org).
-# Só os arquivos temporários de geração ficam de fora:
-dados/*.gpkg
-dados/_*
+# Dados das RPPNs (nomes de proprietários) — NÃO ficam neste repositório público.
+# Moram no repositório PRIVADO instituto-cerrados-ic/plataforma-rppn-dados,
+# lido/gravado pelo app em tempo de execução (dados_remotos.py). A pasta local
+# dados/ serve só ao desenvolvimento.
+dados/
 
 # Material de referência pesado (não é usado pelo app)
 modelo_ref.pdf

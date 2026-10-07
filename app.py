@@ -13,6 +13,7 @@ import json
 import sys
 import tempfile
 import zipfile
+from datetime import date, datetime
 from pathlib import Path
 
 import streamlit as st
@@ -77,8 +78,8 @@ st.markdown(f"""
   .ic-header p {{ margin:2px 0 0; opacity:.92; font-size:.88rem; }}
   .stTabs [data-baseweb="tab-list"] {{ gap:6px; flex-wrap:wrap; }}
   .stTabs [data-baseweb="tab"] {{ background:#F1EBDD; border-radius:8px 8px 0 0;
-     padding:10px 22px; height:auto; }}
-  .stTabs [data-baseweb="tab"] p {{ font-size:1rem; white-space:nowrap; margin:0; }}
+     padding:10px 16px; height:auto; }}
+  .stTabs [data-baseweb="tab"] p {{ font-size:.95rem; white-space:nowrap; margin:0; }}
   .stTabs [aria-selected="true"] {{ background:{VERDE}; }}
   .stTabs [aria-selected="true"] p {{ color:#fff; }}
   /* a última aba (Administrar) fica encostada à direita */
@@ -420,8 +421,35 @@ abas = st.tabs([
     ":material/map: Perímetro / Mapa",
     ":material/folder: Documentos",
     ":material/fact_check: Revisão",
+    ":material/timeline: Processos",
     ":material/admin_panel_settings: Administrar",
 ])
+
+
+def _publicar_arquivos(arquivos: dict[str, str], mensagem: str, dados_dir: Path) -> bool:
+    """Grava no GitHub (token nos secrets → o Streamlit Cloud republica) ou
+    localmente (desenvolvimento). Usado pela sincronização e pelos processos."""
+    import sync_ingest as _SI
+    try:
+        _gh = st.secrets["github"] if "github" in st.secrets else None
+    except Exception:
+        _gh = None
+    if _gh and _gh.get("token"):
+        with st.spinner("Publicando no GitHub…"):
+            try:
+                _SI.gravar_github(_gh["token"], _gh.get("repo", "instituto-cerrados-ic/plataforma-rppn"),
+                                  _gh.get("branch", "main"), arquivos, mensagem)
+            except Exception as e:
+                st.error(f"Falha ao publicar no GitHub: {e}")
+                return False
+        st.success("Publicado! A plataforma vai **reiniciar em 1–2 minutos** já com os dados novos.")
+        return True
+    for caminho, conteudo in arquivos.items():
+        alvo = dados_dir.parent / caminho
+        alvo.parent.mkdir(parents=True, exist_ok=True)
+        alvo.write_text(conteudo, encoding="utf-8")
+    st.success("Gravado localmente (sem token do GitHub configurado).")
+    return True
 
 # --- 1. RPPN ---------------------------------------------------------------
 with abas[0]:
@@ -783,8 +811,252 @@ with abas[6]:
     st.info("Login e envio automático ao SIMRPPN entram na Fase 2. "
             "Por ora, valide o layout e as funcionalidades.")
 
-# --- 8. Administrar --------------------------------------------------------
+# --- 8. Processos ----------------------------------------------------------
 with abas[7]:
+    import pandas as pd
+    import altair as alt
+    import processos as PR
+    PR = importlib.reload(PR)
+    DADOS = Path(__file__).resolve().parent / "dados"
+    arq_proc = DADOS / "processos.json"
+    _quem = (st.user.email if _tem_auth and st.user.is_logged_in else "local")
+    _quem_curto = _quem.split("@")[0]
+
+    if "proc_base" not in ss:
+        ss.proc_base = PR.carregar(arq_proc)
+        ss.proc_sujo = False
+    base_p = ss.proc_base
+    procs = base_p["processos"]
+
+    CORES_FASE = {"1": "#B8860B", "2": "#E85718", "3": "#E00080",
+                  "4": "#603010", "5": "#2E7D32", "6": "#004F23"}
+    NOMES_FASE = {p[0]: f"{p[0]}. {p[1]}" for p in PR.PASSOS}
+
+    def _marcar_sujo():
+        ss.proc_sujo = True
+
+    # ---------- cabeçalho: salvar / situação ----------
+    ch1, ch2 = st.columns([3, 1.2])
+    with ch1:
+        st.subheader("Gestão dos processos de criação de RPPN")
+        st.caption("Passos conforme o documento *Processo de Criação de RPPNs* (vigente "
+                   "07/10/2026)" + (f" · última gravação: {base_p['atualizado_em']}"
+                                     + (f" por {base_p['por']}" if base_p.get("por") else "")
+                                     if base_p.get("atualizado_em") else ""))
+    with ch2:
+        if ss.proc_sujo:
+            st.warning("Há alterações não gravadas.", icon=":material/edit_note:")
+        if st.button("Gravar alterações", type="primary", icon=":material/save:",
+                     disabled=not ss.proc_sujo, use_container_width=True, key="proc_salvar"):
+            ok = _publicar_arquivos({"dados/processos.json": PR.serializar(base_p, _quem)},
+                                    f"Processos de RPPN atualizados ({_quem})", DADOS)
+            if ok:
+                ss.proc_sujo = False
+
+    # ---------- resumo + gráficos ----------
+    ativos = [p for p in procs if p.get("situacao", "ativo") == "ativo"]
+    linhas = []
+    for p in ativos:
+        r = PR.resumo(p)
+        linhas.append({"Processo": p["nome"], "UF": p.get("uf", ""), "fase": r["fase"],
+                       "Fase": NOMES_FASE[r["fase"]], "Completude (%)": r["completude"],
+                       "Tarefas": f"{r['concluidas']}/{r['total']}",
+                       "Dias restantes (estim.)": r["dias_restantes"],
+                       "Previsão": r["previsao"],
+                       "Parado há (dias)": r["parado_ha"] if r["parado_ha"] is not None else "",
+                       "Responsável": p.get("responsavel", "")})
+    if not ativos:
+        st.info("Nenhum processo ativo ainda. Crie um abaixo ou importe os que já estão "
+                "em trâmite no SIMRPPN.")
+    else:
+        dfp = pd.DataFrame(linhas)
+        mm = st.columns(4)
+        mm[0].metric("Processos ativos", len(ativos))
+        mm[1].metric("Completude média", f"{dfp['Completude (%)'].mean():.0f}%")
+        mm[2].metric("Na análise do ICMBio (passo 5)", int((dfp["fase"] == "5").sum()))
+        parados = pd.to_numeric(dfp["Parado há (dias)"], errors="coerce")
+        mm[3].metric("Parados há mais de 30 dias", int((parados > 30).sum()))
+
+        g1, g2 = st.columns([1.6, 1])
+        with g1:
+            with st.container(border=True):
+                st.markdown("**Completude de cada processo** (cor = fase atual)")
+                _dom = list(CORES_FASE)
+                bar = alt.Chart(dfp).mark_bar().encode(
+                    x=alt.X("Completude (%):Q", scale=alt.Scale(domain=[0, 100]),
+                            title="Tarefas concluídas (%)"),
+                    y=alt.Y("Processo:N", sort="-x", title=None,
+                            axis=alt.Axis(labelLimit=220)),
+                    color=alt.Color("fase:N", title="Fase atual",
+                                    scale=alt.Scale(domain=_dom, range=[CORES_FASE[k] for k in _dom]),
+                                    legend=alt.Legend(labelExpr="'Passo ' + datum.label")),
+                    tooltip=["Processo", "Fase", "Completude (%)", "Tarefas",
+                             "Dias restantes (estim.)", "Previsão"])
+                txt = alt.Chart(dfp).mark_text(align="left", dx=4, fontSize=11).encode(
+                    x="Completude (%):Q", y=alt.Y("Processo:N", sort="-x"),
+                    text=alt.Text("Completude (%):Q", format=".0f"))
+                st.altair_chart((bar + txt).properties(height=max(200, 26 * len(dfp) + 40)),
+                                use_container_width=True)
+        with g2:
+            with st.container(border=True):
+                st.markdown("**Processos por fase**")
+                cf = pd.DataFrame({"fase": list(CORES_FASE)})
+                cf["n"] = cf["fase"].map(dfp["fase"].value_counts()).fillna(0).astype(int)
+                cf["Fase"] = cf["fase"].map(NOMES_FASE)
+                bf = alt.Chart(cf).mark_bar(size=30).encode(
+                    x=alt.X("fase:O", title="Passo", axis=alt.Axis(labelAngle=0)),
+                    y=alt.Y("n:Q", title="Processos", axis=alt.Axis(tickMinStep=1)),
+                    color=alt.Color("fase:N", legend=None,
+                                    scale=alt.Scale(domain=list(CORES_FASE),
+                                                    range=list(CORES_FASE.values()))),
+                    tooltip=[alt.Tooltip("Fase:N"), alt.Tooltip("n:Q", title="Processos")]
+                ).properties(height=max(200, 26 * len(dfp) + 40))
+                st.altair_chart(bf, use_container_width=True)
+
+        with st.container(border=True):
+            st.markdown("**Situação, o que falta e previsão** (estimativa: duração prevista "
+                        "de cada passo × fração que falta)")
+            st.dataframe(dfp.drop(columns=["fase"]).sort_values("Completude (%)", ascending=False),
+                         use_container_width=True, hide_index=True)
+
+    # ---------- novo processo / importar ----------
+    with st.expander("Novo processo", icon=":material/add_circle:"):
+        n1, n2, n3 = st.columns([2, .7, 1.3])
+        nv_nome = n1.text_input("Nome da RPPN (ou do imóvel/proprietário, se ainda sem nome)", key="np_nome")
+        nv_uf = n2.selectbox("UF", UFS, index=UFS.index("GO"), key="np_uf")
+        nv_mun = n3.text_input("Município", key="np_mun")
+        n4, n5, n6 = st.columns(3)
+        nv_prop = n4.text_input("Proprietário(a)", key="np_prop")
+        nv_resp = n5.text_input("Responsável no IC", value=_quem_curto, key="np_resp")
+        nv_ini = n6.date_input("Início do processo", value=date.today(), format="DD/MM/YYYY", key="np_ini")
+        if st.button("Criar processo", icon=":material/add:", key="np_criar", disabled=not nv_nome.strip()):
+            procs.append(PR.novo_processo(nv_nome.strip(), nv_uf, nv_mun.strip(), None,
+                                          nv_prop.strip(), nv_resp.strip(),
+                                          nv_ini.strftime(PR.FMT)))
+            _marcar_sujo()
+            st.rerun()
+        arq_json_s = DADOS / "rppns.json"
+        if arq_json_s.exists():
+            _rp = json.load(open(arq_json_s, encoding="utf-8")).get("rppns", [])
+            sug = PR.a_partir_do_simrppn(_rp, procs)
+            if sug:
+                st.markdown(f"**{len(sug)} RPPN(s) em trâmite no SIMRPPN ainda sem ficha de "
+                            "processo:** " + ", ".join(s["nome"] for s in sug))
+                st.caption("Ao importar, os passos 1 a 3 e a abertura no SIMRPPN ficam marcados "
+                           "como feitos (presumido pela existência do requerimento) — confira "
+                           "na ficha.")
+                if st.button("Importar do SIMRPPN", icon=":material/download:", key="np_importar"):
+                    procs.extend(sug)
+                    _marcar_sujo()
+                    st.rerun()
+
+    # ---------- ficha do processo ----------
+    if procs:
+        st.markdown("---")
+        nomes = {f"{p['nome']} ({p.get('uf','')})" + (" — concluído" if p.get("situacao") == "concluído" else "")
+                 + (" — arquivado" if p.get("situacao") == "arquivado" else ""): i
+                 for i, p in enumerate(procs)}
+        sel = st.selectbox("Ficha do processo", list(nomes), key="proc_sel")
+        p = procs[nomes[sel]]
+        r = PR.resumo(p)
+
+        with st.container(border=True):
+            f1, f2, f3, f4 = st.columns([2, 1, 1, 1])
+            f1.markdown(f"### {p['nome']}")
+            f1.caption(f"{p.get('municipio','') or '—'} / {p.get('uf','')} · proprietário(a): "
+                       f"{p.get('proprietario','') or '—'}"
+                       + (f" · [página no SIMRPPN](https://simrppn.sisicmbio.icmbio.gov.br/RPPNPage/{p['rppnid']})"
+                          if p.get("rppnid") else ""))
+            f2.metric("Fase atual", f"Passo {r['fase']}")
+            f3.metric("Completude", f"{r['completude']}%")
+            f4.metric("Previsão de conclusão", r["previsao"],
+                      help="Soma da duração prevista dos passos que faltam, proporcional ao que falta em cada um.")
+            e1, e2, e3, e4 = st.columns(4)
+            p["responsavel"] = e1.text_input("Responsável no IC", p.get("responsavel", ""),
+                                             key=f"pr_resp_{p['id']}", on_change=_marcar_sujo)
+            try:
+                _ini = datetime.strptime(p.get("inicio", ""), PR.FMT).date()
+            except ValueError:
+                _ini = date.today()
+            _ini_novo = e2.date_input("Início", _ini, format="DD/MM/YYYY", key=f"pr_ini_{p['id']}",
+                                      on_change=_marcar_sujo)
+            p["inicio"] = _ini_novo.strftime(PR.FMT)
+            p["situacao"] = e3.selectbox("Situação", ["ativo", "concluído", "arquivado"],
+                                         index=["ativo", "concluído", "arquivado"].index(p.get("situacao", "ativo")),
+                                         key=f"pr_sit_{p['id']}", on_change=_marcar_sujo)
+            e4.metric("Parado há", f"{r['parado_ha']} dias" if r["parado_ha"] is not None else "—",
+                      help="Dias desde a última tarefa concluída com data.")
+            st.markdown(f"**Agora:** {r['fase_titulo']} — próximas tarefas: "
+                        + ("; ".join(r["proximas"][:3]) if r["proximas"] else "nenhuma")
+                        + f". **Faltam ≈ {r['dias_restantes']} dias** no ritmo previsto.")
+
+            # barras por passo
+            dfs = pd.DataFrame([{"Passo": f"{ps['id']}. {ps['titulo']}", "pct": ps["pct"],
+                                 "fase": ps["id"], "Tarefas": f"{ps['feitas']}/{ps['n']}",
+                                 "Dias previstos": ps["dias"]} for ps in r["passos"]])
+            bp = alt.Chart(dfs).mark_bar().encode(
+                x=alt.X("pct:Q", scale=alt.Scale(domain=[0, 100]), title="Concluído (%)"),
+                y=alt.Y("Passo:N", sort=None, title=None, axis=alt.Axis(labelLimit=320)),
+                color=alt.Color("fase:N", legend=None,
+                                scale=alt.Scale(domain=list(CORES_FASE), range=list(CORES_FASE.values()))),
+                tooltip=["Passo", "Tarefas", "Dias previstos"]).properties(height=190)
+            st.altair_chart(bp, use_container_width=True)
+
+        # tarefas por passo
+        def _toggle(pid_tid, pid_proc):
+            key = f"tk_{pid_proc}_{pid_tid}"
+            prc = next(x for x in procs if x["id"] == pid_proc)
+            reg = prc["tarefas"].setdefault(pid_tid, {"feito": False, "data": "", "por": "", "obs": ""})
+            reg["feito"] = bool(ss[key])
+            if reg["feito"] and not reg.get("data"):
+                reg["data"] = date.today().strftime(PR.FMT)
+                reg["por"] = _quem_curto
+            _marcar_sujo()
+
+        def _obs(pid_tid, pid_proc, campo):
+            key = f"{campo}_{pid_proc}_{pid_tid}"
+            prc = next(x for x in procs if x["id"] == pid_proc)
+            reg = prc["tarefas"].setdefault(pid_tid, {"feito": False, "data": "", "por": "", "obs": ""})
+            val = ss[key]
+            reg[campo] = val.strftime(PR.FMT) if hasattr(val, "strftime") else (val or "")
+            _marcar_sujo()
+
+        for ps in r["passos"]:
+            aberto = ps["id"] == r["fase"]
+            rot = f"Passo {ps['id']} — {ps['titulo']}  ·  {ps['feitas']}/{ps['n']} tarefas"
+            with st.expander(rot, expanded=aberto,
+                             icon=":material/check_circle:" if ps["pct"] == 100 else ":material/radio_button_unchecked:"):
+                dcol, _ = st.columns([1, 3])
+                p["duracoes"][ps["id"]] = int(dcol.number_input(
+                    "Duração prevista deste passo (dias)", 1, 999, ps["dias"],
+                    key=f"dur_{p['id']}_{ps['id']}", on_change=_marcar_sujo))
+                tarefas = next(x[3] for x in PR.PASSOS if x[0] == ps["id"])
+                for tid, desc in tarefas:
+                    reg = p["tarefas"].get(tid, {})
+                    c1, c2, c3, c4 = st.columns([3.2, .9, .9, 1.6])
+                    c1.checkbox(f"**{tid}** {desc}", value=bool(reg.get("feito")),
+                                key=f"tk_{p['id']}_{tid}", on_change=_toggle, args=(tid, p["id"]))
+                    if reg.get("feito"):
+                        try:
+                            _d = datetime.strptime(reg.get("data", ""), PR.FMT).date()
+                        except ValueError:
+                            _d = date.today()
+                        c2.date_input("Data", _d, format="DD/MM/YYYY", key=f"data_{p['id']}_{tid}",
+                                      on_change=_obs, args=(tid, p["id"], "data"),
+                                      label_visibility="collapsed")
+                        c3.caption(reg.get("por", ""))
+                    c4.text_input("Observação", reg.get("obs", ""), key=f"obs_{p['id']}_{tid}",
+                                  on_change=_obs, args=(tid, p["id"], "obs"),
+                                  label_visibility="collapsed", placeholder="observação")
+        p["notas"] = st.text_area("Notas gerais do processo (contatos, pendências do proprietário, ofícios…)",
+                                  p.get("notas", ""), key=f"notas_{p['id']}", on_change=_marcar_sujo)
+        if st.button("Excluir esta ficha", icon=":material/delete:", key=f"del_{p['id']}"):
+            procs.remove(p)
+            _marcar_sujo()
+            st.rerun()
+
+# --- 9. Administrar --------------------------------------------------------
+with abas[8]:
     import pandas as pd
     import altair as alt
     st.subheader("Administrar — RPPNs do Instituto Cerrados")

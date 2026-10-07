@@ -873,7 +873,7 @@ with abas[7]:
                     if _gh and _gh.get("token"):
                         with st.spinner("Publicando no GitHub…"):
                             try:
-                                SI.gravar_github(_gh["token"], _gh.get("repo", "YuriSalmona/plataforma-rppn"),
+                                SI.gravar_github(_gh["token"], _gh.get("repo", "instituto-cerrados-ic/plataforma-rppn"),
                                                  _gh.get("branch", "main"), _arqs,
                                                  f"Sincroniza RPPNs via plataforma ({_rj['sincronizado_em']}, {_por})")
                                 st.success("Publicado! A plataforma vai **reiniciar em 1–2 minutos** já com os "

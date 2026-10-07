@@ -138,10 +138,14 @@
       (function check() {
         var d = null; try { d = f.contentDocument; } catch (e) {}
         if (d && d.readyState === "complete" && d.querySelector("select[name='sistema_de_coordenadasid']")) {
-          var e = extrair(d), parcial = e.limite_tipo === "parcial";
-          var okR = e.x_rppn.length >= 3 && e.x_rppn.length >= espRppn;
-          var okI = e.x_imovel.length >= 3 && e.x_imovel.length >= espImovel;
-          if ((parcial ? okR : okI) || Date.now() - t0 > 25000) { f.remove(); resolve(e); return; }
+          var e = extrair(d);
+          var okR = e.x_rppn.length >= Math.max(3, espRppn);
+          var okI = e.x_imovel.length >= Math.max(3, espImovel);
+          // Se o memorial declara pontos próprios da RPPN, exige-os — não confia no
+          // botão total/parcial, que o script da página marca tarde (corrida que fazia
+          // o coletor antigo parar cedo). Sem contagem declarada, cai no botão.
+          var pronto = espRppn > 0 ? okR : (espImovel > 0 ? okI : (e.limite_tipo === "parcial" ? okR : okI));
+          if (pronto || Date.now() - t0 > 25000) { f.remove(); resolve(e); return; }
         } else if (Date.now() - t0 > 25000) { f.remove(); resolve(null); return; }
         setTimeout(check, 400);
       })();

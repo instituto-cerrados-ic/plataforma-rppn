@@ -792,6 +792,99 @@ with abas[7]:
     arq_json = DADOS / "rppns.json"
     arq_geo = DADOS / "rppns.geojson"
 
+    # ---- Sincronizar com o SIMRPPN — por qualquer pessoa, de qualquer máquina ----
+    import streamlit.components.v1 as components
+    from urllib.parse import quote
+    import sync_ingest as SI
+    SI = importlib.reload(SI)
+    _meta = json.load(open(arq_json, encoding="utf-8")) if arq_json.exists() else {}
+    with st.expander("Sincronizar com o SIMRPPN", expanded=False, icon=":material/sync:"):
+        if _meta.get("sincronizado_em"):
+            st.caption(f"Última sincronização: **{_meta['sincronizado_em']}**"
+                       + (f" · por {_meta['por']}" if _meta.get("por") else "")
+                       + (f" · coletor v{_meta['coletor_versao']}" if _meta.get("coletor_versao") else ""))
+        st.markdown(
+            "A leitura do SIMRPPN acontece **no seu próprio navegador**, com o seu login "
+            "gov.br — nenhuma senha passa pela plataforma, e nada é navegado à vista: "
+            "aparece só uma barra de progresso. Três passos:")
+
+        js_src = (Path(__file__).resolve().parent / "sync_coletor.js").read_text(encoding="utf-8")
+        _href = "javascript:" + quote(js_src, safe="")
+        st.markdown("**Passo 1 — uma vez só.** Arraste o botão abaixo para a **barra de "
+                    "favoritos** do seu navegador (Chrome/Edge: Ctrl+Shift+B mostra a barra).")
+        components.html(
+            f'<div style="font-family:Montserrat,Segoe UI,Arial,sans-serif;display:flex;'
+            f'align-items:center;gap:14px">'
+            f'<a href="{_href}" onclick="alert(\'Não clique aqui: arraste este botão para a '
+            f'barra de favoritos. Depois use-o na página do SIMRPPN.\');return false;" '
+            f'style="display:inline-block;background:{VERDE};color:#fff;padding:10px 18px;'
+            f'border-radius:22px;font-weight:700;text-decoration:none;cursor:grab;'
+            f'border-bottom:3px solid {MAGENTA}">&#8597; Coletar RPPNs</a>'
+            f'<span style="font-size:.85rem;color:#555">← arraste para os favoritos</span></div>',
+            height=64)
+        with st.expander("Não consegue arrastar? Crie o favorito manualmente"):
+            st.markdown("No navegador: **Favoritos → Adicionar**. Nome: `Coletar RPPNs`. "
+                        "No campo **URL/endereço**, cole o texto abaixo inteiro:")
+            st.text_area("Endereço do favorito", _href, height=90, key="sync_href", label_visibility="collapsed")
+        st.markdown(
+            "**Passo 2.** Logado(a) no SIMRPPN, na página **Painel de Gestão**, clique no "
+            "favorito **Coletar RPPNs**. Uma barra de progresso mostra a sincronização "
+            "(≈5 min); ao terminar, um arquivo `sincronizacao_rppns_<data>.json` é baixado.\n\n"
+            "**Passo 3.** Envie esse arquivo aqui:")
+        up = st.file_uploader("Arquivo de sincronização (.json)", type=["json"], key="sync_up")
+        if up is not None:
+            try:
+                _payload = json.load(up)
+            except Exception as e:
+                _payload, _erros = None, [f"Não consegui ler o arquivo: {e}"]
+            else:
+                _erros = SI.validar(_payload)
+            if _erros:
+                st.error("**Arquivo inválido:**\n\n- " + "\n- ".join(_erros))
+            else:
+                _por = (st.user.email if _tem_auth and st.user.is_logged_in else "local")
+                _rj, _gj, _st = SI.processar(_payload, por=_por)
+                _geo_antigo = json.load(open(arq_geo, encoding="utf-8")) if arq_geo.exists() else None
+                _dif = SI.comparar(_meta or None, _rj, _geo_antigo, _gj)
+                c1, c2, c3 = st.columns(3)
+                c1.metric("RPPNs no arquivo", _st["total"])
+                c2.metric("Com polígono", _st["poligonos"])
+                c3.metric("Criadas sem polígono", len(_st["criadas_sem_poligono"]))
+                linhas = []
+                if _dif["novas"]: linhas.append(f"**{len(_dif['novas'])} nova(s):** " + ", ".join(_dif["novas"]))
+                if _dif["status_alterados"]: linhas.append("**Status alterado:** " + "; ".join(_dif["status_alterados"]))
+                if _dif["poligonos_novos"]: linhas.append(f"**{len(_dif['poligonos_novos'])} polígono(s) novo(s):** " + ", ".join(_dif["poligonos_novos"]))
+                if _dif["removidas"]: linhas.append("**Saíram do painel:** " + ", ".join(_dif["removidas"]))
+                if _dif["poligonos_perdidos"]: linhas.append("**Polígonos que sumiriam:** " + ", ".join(_dif["poligonos_perdidos"]))
+                st.markdown("**O que muda em relação ao publicado:**\n\n- " + "\n- ".join(linhas)
+                            if linhas else "Nenhuma diferença em relação ao que já está publicado.")
+                if _st["criadas_sem_poligono"]:
+                    st.caption("Criadas sem polígono: " + ", ".join(_st["criadas_sem_poligono"]))
+                if _st["com_erro_coleta"]:
+                    st.warning("Com erro na coleta (confira no SIMRPPN): " + ", ".join(map(str, _st["com_erro_coleta"])))
+                if st.button("Confirmar e publicar", type="primary", icon=":material/cloud_upload:",
+                             key="sync_pub"):
+                    try:
+                        _gh = st.secrets["github"] if "github" in st.secrets else None
+                    except Exception:
+                        _gh = None
+                    _arqs = {"dados/rppns.json": json.dumps(_rj, ensure_ascii=False, indent=1),
+                             "dados/rppns.geojson": json.dumps(_gj, ensure_ascii=False)}
+                    if _gh and _gh.get("token"):
+                        with st.spinner("Publicando no GitHub…"):
+                            try:
+                                SI.gravar_github(_gh["token"], _gh.get("repo", "YuriSalmona/plataforma-rppn"),
+                                                 _gh.get("branch", "main"), _arqs,
+                                                 f"Sincroniza RPPNs via plataforma ({_rj['sincronizado_em']}, {_por})")
+                                st.success("Publicado! A plataforma vai **reiniciar em 1–2 minutos** já com os "
+                                           "dados novos. Pode fechar esta página.")
+                            except Exception as e:
+                                st.error(f"Falha ao publicar no GitHub: {e}")
+                    else:
+                        SI.gravar_local(DADOS, _rj, _gj)
+                        st.success("Dados gravados localmente (sem token do GitHub configurado).")
+                        st.rerun()
+
     # cores diversificadas na identidade Jurema/IC
     CORES_STATUS = {"criada": "#004F23", "em trâmite": "#E85718",
                     "em cadastro": "#E00080", "arquivada": "#603010"}

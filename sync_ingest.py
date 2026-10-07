@@ -62,8 +62,15 @@ def validar(payload) -> list[str]:
     return erros
 
 
-def processar(payload: dict, por: str = "") -> tuple[dict, dict, dict]:
-    """-> (rppns_json, geojson, estatisticas)"""
+def processar(payload: dict, por: str = "", base_atual: dict | None = None,
+              geo_atual: dict | None = None) -> tuple[dict, dict, dict]:
+    """-> (rppns_json, geojson, estatisticas).
+
+    MESCLA com o que já está publicado: quem sincroniza pode ser uma
+    colaboradora que só vê parte das RPPNs no painel dela (vínculo no SIMRPPN).
+    RPPNs que não apareceram no arquivo são MANTIDAS; polígonos já publicados
+    são mantidos quando a coleta não trouxe um novo para aquela RPPN.
+    """
     regs, feats, falhas = [], [], []
     for r in payload["rppns"]:
         reg = {k: r.get(k, "") for k in CAMPOS}
@@ -85,6 +92,20 @@ def processar(payload: dict, por: str = "") -> tuple[dict, dict, dict]:
                                              "area_rppn_ha": reg["area_rppn_ha"]}})
         except Exception as e:  # polígono inválido não derruba a sincronização
             falhas.append(f"{reg['nome']}: {e}")
+    # --- mesclagem com a base publicada ---
+    vistos = {r["rppnid"] for r in regs}
+    mantidas = []
+    for r in (base_atual or {}).get("rppns", []):
+        if r.get("rppnid") and r["rppnid"] not in vistos:
+            regs.append(r)
+            mantidas.append(r.get("nome", ""))
+    ids_feat = {f["properties"]["rppnid"] for f in feats}
+    poligonos_mantidos = 0
+    for f in (geo_atual or {}).get("features", []):
+        if f["properties"].get("rppnid") not in ids_feat:
+            feats.append(f)
+            poligonos_mantidos += 1
+
     agora = datetime.now().strftime("%d/%m/%Y %H:%M")
     rppns_json = {"fonte": "SIMRPPN — sincronização pela plataforma",
                   "sincronizado_em": agora, "por": por,
@@ -93,6 +114,8 @@ def processar(payload: dict, por: str = "") -> tuple[dict, dict, dict]:
     geojson = {"type": "FeatureCollection", "features": feats}
     ids_poly = {f["properties"]["rppnid"] for f in feats}
     stats = {"total": len(regs), "poligonos": len(feats),
+             "no_arquivo": len(vistos), "mantidas_nao_vistas": mantidas,
+             "poligonos_mantidos": poligonos_mantidos,
              "criadas_sem_poligono": [x["nome"] for x in regs
                                       if x["status"] == "criada" and x["rppnid"] not in ids_poly],
              "falhas": falhas, "com_erro_coleta": [x.get("nome") for x in payload["rppns"] if x.get("erro")]}

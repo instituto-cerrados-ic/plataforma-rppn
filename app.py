@@ -843,13 +843,19 @@ with abas[7]:
                 st.error("**Arquivo inválido:**\n\n- " + "\n- ".join(_erros))
             else:
                 _por = (st.user.email if _tem_auth and st.user.is_logged_in else "local")
-                _rj, _gj, _st = SI.processar(_payload, por=_por)
                 _geo_antigo = json.load(open(arq_geo, encoding="utf-8")) if arq_geo.exists() else None
+                _rj, _gj, _st = SI.processar(_payload, por=_por, base_atual=_meta or None,
+                                             geo_atual=_geo_antigo)
                 _dif = SI.comparar(_meta or None, _rj, _geo_antigo, _gj)
                 c1, c2, c3 = st.columns(3)
-                c1.metric("RPPNs no arquivo", _st["total"])
-                c2.metric("Com polígono", _st["poligonos"])
+                c1.metric("RPPNs no arquivo", _st["no_arquivo"])
+                c2.metric("Com polígono (após mesclar)", _st["poligonos"])
                 c3.metric("Criadas sem polígono", len(_st["criadas_sem_poligono"]))
+                if _st["mantidas_nao_vistas"]:
+                    st.info(f"**{len(_st['mantidas_nao_vistas'])} RPPN(s) não apareceram no painel de "
+                            "quem sincronizou e foram mantidas** como estavam (quem sincroniza vê só "
+                            "as RPPNs a que está vinculado no SIMRPPN): "
+                            + ", ".join(_st["mantidas_nao_vistas"]))
                 linhas = []
                 if _dif["novas"]: linhas.append(f"**{len(_dif['novas'])} nova(s):** " + ", ".join(_dif["novas"]))
                 if _dif["status_alterados"]: linhas.append("**Status alterado:** " + "; ".join(_dif["status_alterados"]))

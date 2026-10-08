@@ -75,16 +75,60 @@ PASSOS = [
 DURACAO_PADRAO = {p[0]: p[2] for p in PASSOS}
 FMT = "%d/%m/%Y"
 
+# Roteiro DISTRITAL (IBRAM/DF, sistema Harpia) — RASCUNHO baseado na IN IBRAM
+# nº 18/2020 e no que o formulário do Harpia pede; a equipe valida e ajusta.
+PASSOS_IBRAM = [
+    ("1", "Verificar os documentos da propriedade", 15, PASSOS[0][3]),
+    ("2", "Definir o limite da RPPN", 30, PASSOS[1][3]),
+    ("3", "Montar o processo (documentos da IN IBRAM 18/2020)", 30, [
+        ("3.1", "Requerimento de criação assinado pelo proprietário/representante"),
+        ("3.2", "Mapa e arquivos vetoriais (shapefile) do imóvel e da RPPN"),
+        ("3.3", "Documentos pessoais / atos constitutivos (se PJ) e procuração (se representante)"),
+        ("3.4", "Certidão de matrícula dentro da validade"),
+        ("3.5", "CCIR e Certidão Negativa de Débitos de Imóvel Rural"),
+        ("3.6", "ART do georreferenciamento e memoriais descritivos assinados"),
+        ("3.7", "Termo de compromisso / termo de parceria assinado"),
+    ]),
+    ("4", "Protocolar no Harpia (IBRAM)", 10, [
+        ("4.1", "Proprietário/representante cadastrado como usuário externo no SEI-GDF"),
+        ("4.2", "Requerimento preenchido no Harpia (interessado, propriedade, RPPN, shapefile)"),
+        ("4.3", "Solicitação enviada — protocolo gerado"),
+        ("4.4", "Documentos assinados no SEI pelo proprietário/representante"),
+    ]),
+    ("5", "Acompanhar o processo no IBRAM", 180, [
+        ("5.1", "Análise técnica (SUCON) concluída"),
+        ("5.2", "Vistoria técnica realizada"),
+        ("5.3", "Exigências/diligências do IBRAM atendidas"),
+        ("5.4", "Parecer técnico favorável emitido"),
+        ("5.5", "Análise jurídica (Procuradoria) concluída"),
+    ]),
+    ("6", "Criação e averbação da RPPN", 60, [
+        ("6.1", "Portaria/decreto de criação publicado no DODF"),
+        ("6.2", "Termo de compromisso assinado e registrado"),
+        ("6.3", "Averbação à margem da matrícula feita (certidão recebida)"),
+        ("6.4", "Certidão de averbação enviada ao IBRAM"),
+        ("6.5", "Comunicação acionada para divulgação"),
+    ]),
+]
+ROTEIROS = {"ICMBio": PASSOS, "IBRAM": PASSOS_IBRAM}
+
+
+def passos_de(p: dict) -> list:
+    """Roteiro do processo conforme o órgão (ICMBio = federal, IBRAM = distrital)."""
+    return ROTEIROS.get(p.get("orgao") or "ICMBio", PASSOS)
+
 
 # ----------------------------------------------------------------- modelo
 def novo_processo(nome: str, uf: str = "", municipio: str = "", rppnid=None,
-                  proprietario: str = "", responsavel: str = "", inicio: str = "") -> dict:
-    return {"id": f"p{int(datetime.now().timestamp())}", "nome": nome, "uf": uf,
+                  proprietario: str = "", responsavel: str = "", inicio: str = "",
+                  orgao: str = "ICMBio") -> dict:
+    roteiro = ROTEIROS.get(orgao, PASSOS)
+    return {"id": f"p{int(datetime.now().timestamp() * 1000)}", "nome": nome, "uf": uf,
             "municipio": municipio, "rppnid": rppnid, "proprietario": proprietario,
-            "responsavel": responsavel,
+            "responsavel": responsavel, "orgao": orgao,   # ICMBio (federal) | IBRAM (distrital)
             "inicio": inicio or date.today().strftime(FMT),
             "situacao": "ativo",                   # ativo | concluído | arquivado
-            "duracoes": dict(DURACAO_PADRAO),      # dias previstos por passo (editável)
+            "duracoes": {x[0]: x[2] for x in roteiro},   # dias previstos por passo (editável)
             "tarefas": {},                          # id_tarefa -> {feito, data, por, obs}
             "notas": ""}
 
@@ -113,7 +157,7 @@ def resumo(p: dict) -> dict:
     """Progresso do processo: % por passo, fase atual, o que falta e previsão."""
     t = p.get("tarefas", {})
     passos, fase, concl_tot, n_tot = [], None, 0, 0
-    for pid, titulo, _d, tarefas in PASSOS:
+    for pid, titulo, _d, tarefas in passos_de(p):
         feitas = sum(1 for tid, _ in tarefas if t.get(tid, {}).get("feito"))
         n = len(tarefas)
         concl_tot += feitas
@@ -166,18 +210,25 @@ def a_partir_do_simrppn(rppns: list[dict], existentes: list[dict]) -> list[dict]
     out = []
     for r in rppns:
         if r.get("status") in ("em trâmite", "em cadastro") and r.get("rppnid") not in ids:
+            orgao = r.get("orgao") or "ICMBio"
+            sistema = "Harpia" if orgao == "IBRAM" else "SIMRPPN"
             p = novo_processo(r.get("nome", ""), r.get("uf", ""), r.get("municipio", ""),
                               r.get("rppnid"), r.get("proprietario", ""),
-                              inicio=r.get("data_cadastro") or "")
-            # já está no SIMRPPN: passos 1 a 4.1 presumidos feitos — a equipe confere
-            for pid, _t, _d, tarefas in PASSOS[:3]:
+                              inicio=r.get("data_cadastro") or "", orgao=orgao)
+            # já está no sistema do órgão: passos 1 a 3 e a abertura presumidos feitos — a equipe confere
+            for pid, _t, _d, tarefas in passos_de(p)[:3]:
                 for tid, _ in tarefas:
                     p["tarefas"][tid] = {"feito": True, "data": r.get("data_cadastro") or "",
-                                         "por": "SIMRPPN (presumido)", "obs": ""}
-            p["tarefas"]["4.1"] = {"feito": True, "data": r.get("data_cadastro") or "",
-                                   "por": "SIMRPPN", "obs": ""}
-            if r.get("status") == "em trâmite":
-                p["tarefas"]["4.4"] = {"feito": True, "data": r.get("data_cadastro") or "",
-                                       "por": "SIMRPPN", "obs": ""}
+                                         "por": f"{sistema} (presumido)", "obs": ""}
+            if orgao == "IBRAM":
+                for tid in ("4.2", "4.3"):
+                    p["tarefas"][tid] = {"feito": True, "data": r.get("data_cadastro") or "",
+                                         "por": sistema, "obs": f"protocolo {r.get('protocolo', '')}"}
+            else:
+                p["tarefas"]["4.1"] = {"feito": True, "data": r.get("data_cadastro") or "",
+                                       "por": sistema, "obs": ""}
+                if r.get("status") == "em trâmite":
+                    p["tarefas"]["4.4"] = {"feito": True, "data": r.get("data_cadastro") or "",
+                                           "por": sistema, "obs": ""}
             out.append(p)
     return out

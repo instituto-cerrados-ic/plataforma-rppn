@@ -370,7 +370,7 @@ def _mapa(desenhar=False, role_desenho="imovel"):
 def _tabela_rppns_html(dfv):
     """Tabela HTML no padrão da ferramenta: cabeçalho verde, zebra bege, links."""
     import html as _html
-    cols = [("nome", "RPPN"), ("uf", "UF"), ("municipio", "Município"),
+    cols = [("nome", "RPPN"), ("orgao", "Órgão"), ("uf", "UF"), ("municipio", "Município"),
             ("proprietario", "Proprietário(a)"), ("status", "Status"),
             ("area_rppn_ha", "Área (ha)"), ("data_criacao", "Criação"),
             ("pagina", "Página")]
@@ -849,7 +849,8 @@ with abas[7]:
     linhas = []
     for p in ativos:
         r = PR.resumo(p)
-        linhas.append({"Processo": p["nome"], "UF": p.get("uf", ""), "fase": r["fase"],
+        linhas.append({"Processo": p["nome"], "Órgão": p.get("orgao", "ICMBio"),
+                       "UF": p.get("uf", ""), "fase": r["fase"],
                        "Fase": NOMES_FASE[r["fase"]], "Completude (%)": r["completude"],
                        "Tarefas": f"{r['concluidas']}/{r['total']}",
                        "Dias restantes (estim.)": r["dias_restantes"],
@@ -918,20 +919,22 @@ with abas[7]:
         nv_mun = n3.text_input("Município", key="np_mun")
         n4, n5, n6 = st.columns(3)
         nv_prop = n4.text_input("Proprietário(a)", key="np_prop")
+        nv_orgao = n4.radio("Órgão", ["ICMBio", "IBRAM"], horizontal=True, key="np_orgao",
+                            help="ICMBio = RPPN federal (SIMRPPN); IBRAM = RPPN distrital do DF (Harpia).")
         nv_resp = n5.text_input("Responsável no IC", value=_quem_curto, key="np_resp")
         nv_ini = n6.date_input("Início do processo", value=date.today(), format="DD/MM/YYYY", key="np_ini")
         if st.button("Criar processo", icon=":material/add:", key="np_criar", disabled=not nv_nome.strip()):
             procs.append(PR.novo_processo(nv_nome.strip(), nv_uf, nv_mun.strip(), None,
                                           nv_prop.strip(), nv_resp.strip(),
-                                          nv_ini.strftime(PR.FMT)))
+                                          nv_ini.strftime(PR.FMT), orgao=nv_orgao))
             _marcar_sujo()
             st.rerun()
         _rp = (DR.carregar("rppns.json") or {}).get("rppns", [])
         if _rp:
             sug = PR.a_partir_do_simrppn(_rp, procs)
             if sug:
-                st.markdown(f"**{len(sug)} RPPN(s) em trâmite no SIMRPPN ainda sem ficha de "
-                            "processo:** " + ", ".join(s["nome"] for s in sug))
+                st.markdown(f"**{len(sug)} RPPN(s) em trâmite (SIMRPPN/Harpia) ainda sem ficha de "
+                            "processo:** " + ", ".join(f"{s['nome']} ({s['orgao']})" for s in sug))
                 st.caption("Ao importar, os passos 1 a 3 e a abertura no SIMRPPN ficam marcados "
                            "como feitos (presumido pela existência do requerimento) — confira "
                            "na ficha.")
@@ -953,7 +956,7 @@ with abas[7]:
         with st.container(border=True):
             f1, f2, f3, f4 = st.columns([2, 1, 1, 1])
             f1.markdown(f"### {p['nome']}")
-            f1.caption(f"{p.get('municipio','') or '—'} / {p.get('uf','')} · proprietário(a): "
+            f1.caption(f"{p.get('orgao', 'ICMBio')} · {p.get('municipio','') or '—'} / {p.get('uf','')} · proprietário(a): "
                        f"{p.get('proprietario','') or '—'}"
                        + (f" · [página no SIMRPPN](https://simrppn.sisicmbio.icmbio.gov.br/RPPNPage/{p['rppnid']})"
                           if p.get("rppnid") else ""))
@@ -1020,7 +1023,7 @@ with abas[7]:
                 p["duracoes"][ps["id"]] = int(dcol.number_input(
                     "Duração prevista deste passo (dias)", 1, 999, ps["dias"],
                     key=f"dur_{p['id']}_{ps['id']}", on_change=_marcar_sujo))
-                tarefas = next(x[3] for x in PR.PASSOS if x[0] == ps["id"])
+                tarefas = next(x[3] for x in PR.passos_de(p) if x[0] == ps["id"])
                 for tid, desc in tarefas:
                     reg = p["tarefas"].get(tid, {})
                     c1, c2, c3, c4 = st.columns([3.2, .9, .9, 1.6])
@@ -1136,6 +1139,84 @@ with abas[8]:
                         ss.pop("sync_up", None)
                         st.rerun()
 
+    # ---- Sincronizar com o Harpia (IBRAM/DF) — RPPNs distritais e servidões ----
+    import harpia_ingest as HIN
+    HIN = importlib.reload(HIN)
+    with st.expander("Sincronizar com o Harpia (IBRAM/DF)", expanded=False, icon=":material/account_balance:"):
+        if _meta.get("harpia_sincronizado_em"):
+            st.caption(f"Última sincronização do Harpia: **{_meta['harpia_sincronizado_em']}**"
+                       + (f" · por {_meta['harpia_por']}" if _meta.get("harpia_por") else ""))
+        st.markdown(
+            "RPPNs **distritais** (DF) tramitam no IBRAM pelo sistema **Harpia**. A leitura "
+            "acontece no seu navegador, com o seu login do Harpia; a tela não é navegada à vista "
+            "(só uma barra de progresso). O coletor lê todas as suas solicitações, reconhece as "
+            "de criação de RPPN, a proposta de **servidão ambiental** e baixa o shapefile anexado "
+            "para desenhar o polígono.")
+        _hjs = (Path(__file__).resolve().parent / "harpia_coletor.js").read_text(encoding="utf-8")
+        _hhref = "javascript:" + quote(_hjs, safe="")
+        st.markdown("**Passo 1 — uma vez só.** Arraste o botão para a barra de favoritos.")
+        components.html(
+            f'<div style="font-family:Montserrat,Segoe UI,Arial,sans-serif;display:flex;'
+            f'align-items:center;gap:14px">'
+            f'<a href="{_hhref}" onclick="alert(\'Não clique aqui: arraste este botão para a '
+            f'barra de favoritos. Depois use-o na tela Acompanhamento do Harpia.\');return false;" '
+            f'style="display:inline-block;background:{VERDE};color:#fff;padding:10px 18px;'
+            f'border-radius:22px;font-weight:700;text-decoration:none;cursor:grab;'
+            f'border-bottom:3px solid {MAGENTA}">&#8597; Coletar Harpia</a>'
+            f'<span style="font-size:.85rem;color:#555">← arraste para os favoritos</span></div>',
+            height=64)
+        with st.expander("Não consegue arrastar? Crie o favorito manualmente"):
+            st.markdown("Favoritos → Adicionar. Nome: `Coletar Harpia`. No campo URL cole o texto inteiro:")
+            st.text_area("Endereço do favorito (Harpia)", _hhref, height=90, key="harpia_href",
+                         label_visibility="collapsed")
+        st.markdown(
+            "**Passo 2.** Logado(a) no Harpia (https://harpia.ibram.df.gov.br), abra **Acompanhar "
+            "Minhas Solicitações** (menu *Meus Processos → Acompanhamento*, com a lista na tela) e "
+            "clique no favorito **Coletar Harpia**. Ao terminar, ele baixa `harpia_<data>.json`.\n\n"
+            "**Passo 3.** Envie esse arquivo aqui:")
+        hup = st.file_uploader("Arquivo do Harpia (.json)", type=["json"], key="harpia_up")
+        if hup is not None:
+            try:
+                _hp = json.load(hup)
+            except Exception as e:
+                _hp, _herros = None, [f"Não consegui ler o arquivo: {e}"]
+            else:
+                _herros = HIN.validar(_hp)
+            if _herros:
+                st.error("**Arquivo inválido:**\n\n- " + "\n- ".join(_herros))
+            else:
+                _por = (st.user.email if _tem_auth and st.user.is_logged_in else "local")
+                with st.spinner("Interpretando solicitações e shapefiles…"):
+                    _hrj, _hgj, _hst, _hregs = HIN.processar(_hp, por=_por, base_atual=_meta or None,
+                                                             geo_atual=DR.carregar("rppns.geojson"))
+                c1, c2, c3, c4 = st.columns(4)
+                c1.metric("Solicitações lidas", _hst["solicitacoes"])
+                c2.metric("RPPNs distritais", _hst["rppns"])
+                c3.metric("Com polígono", _hst["poligonos"])
+                c4.metric("Com servidão proposta", len(_hst["servidoes"]))
+                for r in _hregs:
+                    if r["eh_rppn"]:
+                        st.markdown(f"- **{r['nome_rppn']}** — {r['proprietario'] or '—'} · matrícula {r['matricula'] or '—'} · "
+                                    f"RPPN {r['area_rppn_ha'] or '?'} ha de {r['area_imovel_ha'] or '?'} ha · "
+                                    f"{r['situacao']} ({r['data_situacao']}) · servidão: "
+                                    f"{'**sim**' if r['servidao_proposta'] else 'não'} · protocolo {r['protocolo']}")
+                if _hst["relacionadas"]:
+                    st.info("**Requerimentos ligados a RPPN (sem ficha própria no Harpia):** "
+                            + "; ".join(_hst["relacionadas"]))
+                if _hst["outras"]:
+                    st.caption("Outras solicitações (não RPPN): " + "; ".join(_hst["outras"]))
+                if _hst["falhas"]:
+                    st.warning("Shapefiles que não consegui ler: " + "; ".join(_hst["falhas"]))
+                if _hst["com_erro_coleta"]:
+                    st.warning("Com erro na coleta: " + ", ".join(_hst["com_erro_coleta"]))
+                if st.button("Confirmar e publicar", type="primary", icon=":material/cloud_upload:",
+                             key="harpia_pub"):
+                    _harqs = {"rppns.json": json.dumps(_hrj, ensure_ascii=False, indent=1),
+                              "rppns.geojson": json.dumps(_hgj, ensure_ascii=False)}
+                    if _publicar_arquivos(_harqs, f"Sincroniza Harpia/IBRAM via plataforma ({_por})"):
+                        ss.pop("harpia_up", None)
+                        st.rerun()
+
     # cores diversificadas na identidade Jurema/IC
     CORES_STATUS = {"criada": "#004F23", "em trâmite": "#E85718",
                     "em cadastro": "#E00080", "arquivada": "#603010"}
@@ -1148,9 +1229,10 @@ with abas[8]:
     else:
         df = pd.DataFrame(base["rppns"])
         for col in ["proprietario", "municipio", "data_criacao",
-                    "data_cadastro", "data_ato", "pagina"]:
+                    "data_cadastro", "data_ato", "pagina", "orgao"]:
             if col not in df.columns:
                 df[col] = ""
+        df["orgao"] = df["orgao"].fillna("").replace("", "ICMBio")
         df[["proprietario", "municipio", "data_criacao", "pagina"]] = \
             df[["proprietario", "municipio", "data_criacao", "pagina"]].fillna("")
         # defesa: município que veio como dropdown gigante (com quebras) -> limpa
@@ -1160,14 +1242,17 @@ with abas[8]:
 
         # ---- filtros (card) ----
         with st.container(border=True):
-            f1, f2, f3 = st.columns([1, 1.4, 2])
+            f0, f1, f2, f3 = st.columns([1, 1, 1.4, 2])
+            org_l = sorted(df["orgao"].unique().tolist())
             ufs_l = sorted(df["uf"].dropna().unique().tolist())
             sts_l = sorted(df["status"].dropna().unique().tolist())
+            f_org = f0.multiselect("Órgão", org_l, default=org_l, key="adm_org",
+                                   help="ICMBio = federal (SIMRPPN) · IBRAM = distrital/DF (Harpia)")
             f_uf = f1.multiselect("UF", ufs_l, default=ufs_l, key="adm_uf")
             f_st = f2.multiselect("Status", sts_l, default=sts_l, key="adm_st")
             f_tx = f3.text_input("Buscar por nome, município ou proprietário",
                                  key="adm_busca")
-        v = df[df["uf"].isin(f_uf) & df["status"].isin(f_st)]
+        v = df[df["orgao"].isin(f_org) & df["uf"].isin(f_uf) & df["status"].isin(f_st)]
         if f_tx:
             t = f_tx.lower()
             v = v[v["nome"].str.lower().str.contains(t, na=False) |

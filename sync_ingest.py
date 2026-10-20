@@ -107,10 +107,13 @@ def processar(payload: dict, por: str = "", base_atual: dict | None = None,
             poligonos_mantidos += 1
 
     agora = datetime.now().strftime("%d/%m/%Y %H:%M")
-    rppns_json = {"fonte": "SIMRPPN — sincronização pela plataforma",
-                  "sincronizado_em": agora, "por": por,
-                  "coletor_versao": payload.get("versao", ""),
-                  "coletado_em": payload.get("coletado_em", ""), "rppns": regs}
+    # ADITIVO: parte do que já está publicado (preserva metadados de outras fontes,
+    # ex.: harpia_sincronizado_em) e só atualiza o que esta coleta trouxe
+    rppns_json = dict(base_atual or {})
+    rppns_json.update({"fonte": "SIMRPPN + Harpia (IBRAM) — sincronização pela plataforma",
+                       "sincronizado_em": agora, "por": por,
+                       "coletor_versao": payload.get("versao", ""),
+                       "coletado_em": payload.get("coletado_em", ""), "rppns": regs})
     geojson = {"type": "FeatureCollection", "features": feats}
     ids_poly = {f["properties"]["rppnid"] for f in feats}
     stats = {"total": len(regs), "poligonos": len(feats),

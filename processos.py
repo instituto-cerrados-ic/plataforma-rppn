@@ -13,6 +13,7 @@ GitHub pelo token dos secrets, ou gravação local em desenvolvimento).
 from __future__ import annotations
 
 import json
+import uuid
 from datetime import date, datetime, timedelta
 from pathlib import Path
 
@@ -123,7 +124,7 @@ def novo_processo(nome: str, uf: str = "", municipio: str = "", rppnid=None,
                   proprietario: str = "", responsavel: str = "", inicio: str = "",
                   orgao: str = "ICMBio") -> dict:
     roteiro = ROTEIROS.get(orgao, PASSOS)
-    return {"id": f"p{int(datetime.now().timestamp() * 1000)}", "nome": nome, "uf": uf,
+    return {"id": "p" + uuid.uuid4().hex[:10], "nome": nome, "uf": uf,
             "municipio": municipio, "rppnid": rppnid, "proprietario": proprietario,
             "responsavel": responsavel, "orgao": orgao,   # ICMBio (federal) | IBRAM (distrital)
             "inicio": inicio or date.today().strftime(FMT),

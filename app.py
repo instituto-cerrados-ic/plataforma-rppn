@@ -58,7 +58,7 @@ _LOGO_JU = _b64(ASSETS / "logo_jurema_transparente.png")   # colorida (p/ chip b
 
 st.markdown(f"""
 <link rel="preconnect" href="https://fonts.googleapis.com">
-<link href="https://fonts.googleapis.com/css2?family=Londrina+Solid:wght@400&family=Montserrat:wght@400;600;700&display=swap" rel="stylesheet">
+<link href="https://fonts.googleapis.com/css2?family=Montserrat:wght@400;600;700;800&display=swap" rel="stylesheet">
 <style>
   .stApp {{ background: #FCFAF4; font-family: 'Montserrat', sans-serif; }}
   h1,h2,h3 {{ font-family: 'Montserrat', sans-serif; }}
@@ -73,8 +73,8 @@ st.markdown(f"""
     font-weight:600; font-size:.9rem; padding:9px 16px; border-radius:20px;
     white-space:nowrap; border:2px solid transparent; }}
   .ic-header a.guia:hover {{ border-color:{MAGENTA}; color:#1a1a1a; }}
-  .ic-header h1 {{ margin:0; font-size:1.45rem; font-family:'Londrina Solid',
-    'Montserrat', sans-serif; font-weight:400; letter-spacing:.5px; }}
+  .ic-header h1 {{ margin:0; font-size:1.35rem; font-family:'Montserrat', sans-serif;
+    font-weight:800; letter-spacing:.2px; }}
   .ic-header p {{ margin:2px 0 0; opacity:.92; font-size:.88rem; }}
   .stTabs [data-baseweb="tab-list"] {{ gap:6px; flex-wrap:wrap; }}
   .stTabs [data-baseweb="tab"] {{ background:#F1EBDD; border-radius:8px 8px 0 0;
@@ -102,25 +102,15 @@ st.markdown(f"""
   <span class="chip"><img src="data:image/png;base64,{_LOGO_JU}" alt="Jurema"/></span>
 </div>
 """.replace("{BOTAO_GUIA}", (
-    '<a class="guia" href="/app/static/guia_usuario.html" target="_blank">'
+    '<a class="guia" href="?guia=1" target="_blank">'
     '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#1a1a1a" '
     'stroke-width="2" style="vertical-align:-2px;margin-right:6px">'
     '<path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"/>'
     '<path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z"/>'
     '</svg>Guia do Usuário</a>')
-    if st.config.get_option("server.enableStaticServing") else ""),
+    if (Path(__file__).resolve().parent / "static" / "guia_usuario.html").exists() else ""),
     unsafe_allow_html=True)
 
-# fallback: sem static serving (servidor iniciado antes da config), o guia sai
-# como download — nunca uma página em branco
-if not st.config.get_option("server.enableStaticServing"):
-    _guia = Path(__file__).resolve().parent / "static" / "guia_usuario.html"
-    if _guia.exists():
-        st.download_button("Guia do Usuário (abre no navegador)",
-                           _guia.read_bytes(), file_name="guia_usuario.html",
-                           mime="text/html", icon=":material/menu_book:")
-        st.caption("Dica: reinicie o servidor (Ctrl+C e rodar de novo) para o guia "
-                   "abrir direto do cabeçalho, sem download.")
 
 # --- Autenticação: acesso restrito a contas @cerrados.org ------------------
 DOMINIO = "@cerrados.org"
@@ -147,6 +137,22 @@ if _tem_auth:
     with st.sidebar:
         st.caption(f"Conectado: {st.user.email}")
         st.button("Sair", on_click=st.logout, icon=":material/logout:")
+
+# --- Guia do Usuário: rota interna (?guia=1), servida pelo próprio app ----------
+if st.query_params.get("guia"):
+    import streamlit.components.v1 as _components
+    _guia = Path(__file__).resolve().parent / "static" / "guia_usuario.html"
+    if _guia.exists():
+        _html = _guia.read_text(encoding="utf-8")
+        st.markdown('<style>.block-container{padding-top:0.5rem;max-width:900px}</style>',
+                    unsafe_allow_html=True)
+        st.download_button("Baixar o guia (HTML)", _html.encode("utf-8"),
+                           file_name="guia_usuario_plataforma_rppn.html", mime="text/html",
+                           icon=":material/download:")
+        _components.html(_html, height=7800, scrolling=True)
+    else:
+        st.error("Guia não encontrado.")
+    st.stop()
 
 # ícones SVG (profissionais, sem emoji)
 _SVG = {

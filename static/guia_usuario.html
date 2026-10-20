@@ -5,7 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Guia do Usuário — Plataforma RPPN · Instituto Cerrados / Programa Jurema</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
-<link href="https://fonts.googleapis.com/css2?family=Londrina+Solid:wght@400&family=Montserrat:wght@400;600;700&display=swap" rel="stylesheet">
+<link href="https://fonts.googleapis.com/css2?family=Montserrat:wght@400;600;700;800&display=swap" rel="stylesheet">
 <style>
   :root { --verde:#004F23; --bege:#DDCCA4; --magenta:#E00080; --marrom:#603010; }
   * { box-sizing:border-box; }
@@ -16,12 +16,12 @@
             border-bottom:6px solid var(--magenta); display:flex; gap:20px;
             align-items:center; }
   header .chip { background:#fff; border-radius:12px; padding:8px 10px; }
-  h1 { font-family:'Londrina Solid',cursive; font-weight:400; font-size:2rem;
-        margin:0; letter-spacing:.5px; }
+  h1 { font-family:'Montserrat',sans-serif; font-weight:800; font-size:1.7rem;
+        margin:0; letter-spacing:.2px; }
   header p { margin:4px 0 0; opacity:.92; font-size:.9rem; }
   main { padding:28px 36px; }
-  h2 { font-family:'Londrina Solid',cursive; font-weight:400; color:var(--verde);
-        font-size:1.5rem; border-bottom:3px solid var(--bege); padding-bottom:4px;
+  h2 { font-family:'Montserrat',sans-serif; font-weight:700; color:var(--verde);
+        font-size:1.3rem; border-bottom:3px solid var(--bege); padding-bottom:4px;
         margin:30px 0 12px; }
   h3 { color:var(--verde); font-size:1.02rem; margin:18px 0 6px; }
   p, li { font-size:.92rem; line-height:1.55; text-align:left; text-indent:0; }
@@ -64,6 +64,15 @@ ICMBio). Ao final, a plataforma organiza tudo no formato que o SIMRPPN exige.</p
 ajuda automática: correção de tabelas de coordenadas, validação do perímetro,
 aderência de vértices (snapping) e geração do mapa técnico no padrão do Programa
 Jurema.</div>
+<p>Além do preenchimento, a plataforma reúne o <b>painel das RPPNs do Instituto</b>
+(federais, no ICMBio/SIMRPPN, e distritais, no IBRAM/Harpia) e a <b>gestão do andamento
+de cada processo</b>, passo a passo, conforme o documento interno <i>Processo de Criação
+de RPPNs</i>.</p>
+<h3>Acesso</h3>
+<p>Endereço: <code>https://plataforma-rppn.streamlit.app</code>. O acesso é restrito a contas
+<b>@cerrados.org</b>: clique em <b>Entrar com Google</b> e use o seu e-mail institucional.
+Não há senha própria da plataforma. Tudo o que você grava (processos, sincronizações) fica
+guardado com o seu e-mail e a data, num repositório privado do Instituto.</p>
 
 <h2>2. As abas, na ordem</h2>
 <table>
@@ -79,6 +88,10 @@ cartográficas: nome, CPF, CREA, título, nº da ART paga e contatos.
 <tr><td><b>Perímetro / Mapa</b></td><td>O coração da plataforma — ver seções 3 a 6.</td></tr>
 <tr><td><b>Documentos</b></td><td>PDFs das certidões e documentos exigidos (seção 7).</td></tr>
 <tr><td><b>Revisão</b></td><td>Checagem final de pendências antes do envio.</td></tr>
+<tr><td><b>Processos</b></td><td>Andamento de cada processo de criação: passos, tarefas
+feitas e pendentes, prazos e previsão de conclusão (seção 10).</td></tr>
+<tr><td><b>Administrar</b></td><td>Painel das RPPNs do Instituto (filtros, gráficos, tabela e
+webmap) e a <b>sincronização</b> com o SIMRPPN e com o Harpia (seção 9).</td></tr>
 </table>
 
 <h2>3. Perímetro — as 3 formas de informar</h2>
@@ -221,9 +234,99 @@ aderência com tolerância maior; a validação precisa ficar verde.</td></tr>
 se a zona UTM estiver errada, informe-a manualmente (ex.: 22S).</td></tr>
 <tr><td>“O mapa demora a gerar”</td><td>É normal: a plataforma baixa a imagem de
 satélite e o limite municipal do IBGE. Acompanhe a animação.</td></tr>
+<tr><td>“Uma RPPN que eu conduzo não aparece em Administrar/Processos”</td><td>Peça para
+ser vinculada como colaboradora dela no SIMRPPN e sincronize de novo (seção 9.1).</td></tr>
+<tr><td>“Marquei tarefas e sumiram”</td><td>Faltou clicar em <b>Gravar alterações</b> antes
+de fechar a página (seção 10).</td></tr>
+<tr><td>“O favorito não faz nada”</td><td>Ele só funciona na página certa: Painel de Gestão
+(SIMRPPN) ou Acompanhamento (Harpia), e logado. Veja se não abriu um aviso.</td></tr>
 </table>
 
-<h2>9. Envio ao SIMRPPN</h2>
+<h2>9. Administrar — painel e sincronização</h2>
+<p>A aba <b>Administrar</b> mostra todas as RPPNs do Instituto: métricas, RPPNs por status
+e por estado, criadas por ano, a lista completa (com proprietário, município e link para a
+página no SIMRPPN) e o webmap com os polígonos. Os filtros no alto (<b>Órgão</b>
+ICMBio/IBRAM, UF, status e busca por texto) valem para tudo o que está abaixo.</p>
+<div class="destaque">Os dados <b>não se atualizam sozinhos</b>: alguém precisa sincronizar.
+Uma vez por mês, ou quando houver novidade (RPPN criada, processo novo), já mantém o
+painel em dia. A sincronização leva cerca de 5 minutos e não exige instalar nada.</div>
+
+<h3>9.1 Sincronizar com o SIMRPPN (RPPNs federais)</h3>
+<p>A leitura do SIMRPPN acontece <b>no seu próprio navegador</b>, com o <b>seu login
+gov.br</b>. Nenhuma senha passa pela plataforma, e nada é navegado à vista: aparece só
+um painel com barra de progresso.</p>
+<div class="passo"><span class="n">1</span><p><b>Uma vez só:</b> em Administrar →
+“Sincronizar com o SIMRPPN”, <b>arraste o botão “Coletar RPPNs” para a barra de
+favoritos</b> do navegador (no Chrome/Edge, Ctrl+Shift+B mostra a barra). Se não
+conseguir arrastar, use a opção “crie o favorito manualmente”.</p></div>
+<div class="passo"><span class="n">2</span><p>Entre no SIMRPPN com o gov.br e abra o
+<b>Painel de Gestão</b> (a lista de RPPNs). Clique no favorito <b>Coletar RPPNs</b>. Ao
+terminar, o navegador baixa um arquivo <code>sincronizacao_rppns_&lt;data&gt;.json</code>.</p></div>
+<div class="passo"><span class="n">3</span><p>Volte à plataforma e envie esse arquivo no
+campo “Arquivo de sincronização”. Confira o resumo (o que muda em relação ao publicado) e
+clique em <b>Confirmar e publicar</b>. A tela já mostra os dados novos.</p></div>
+<p><b>Importante:</b> você só enxerga, no SIMRPPN, as RPPNs a que está <b>vinculada como
+colaboradora</b>. Por isso, quem abre um processo deve vincular a responsável técnica
+(“Vincular Colaborador à RPPN”, pelo CPF, permissão “Criação da RPPN”). As RPPNs que não
+aparecem no seu painel <b>são mantidas</b> como estavam: a sincronização nunca apaga o que
+você não vê.</p>
+
+<h3>9.2 Sincronizar com o Harpia (RPPNs distritais, IBRAM/DF)</h3>
+<p>Mesma lógica, com o favorito <b>Coletar Harpia</b> (em Administrar → “Sincronizar com o
+Harpia”). Logado no Harpia (<code>harpia.ibram.df.gov.br</code>), abra <b>Acompanhar Minhas
+Solicitações</b> (menu <i>Meus Processos → Acompanhamento</i>, com a lista na tela) e
+clique no favorito. Ele lê todas as suas solicitações, reconhece as de criação de RPPN, a
+proposta de <b>servidão ambiental</b> e baixa o shapefile anexado para desenhar o polígono.
+Envie o arquivo <code>harpia_&lt;data&gt;.json</code> na plataforma e confirme.</p>
+<p>Se o Harpia pedir login de novo no meio do caminho, faça o login, volte à tela
+Acompanhamento e clique no favorito outra vez.</p>
+
+<h2>10. Processos — gestão passo a passo</h2>
+<p>A aba <b>Processos</b> acompanha cada processo de criação de RPPN segundo os
+<b>6 passos</b> do documento <i>Processo de Criação de RPPNs</i> (verificar documentos,
+definir o limite, montar o processo, preencher o requerimento, acompanhar no órgão,
+averbação). RPPNs distritais têm um roteiro próprio, adaptado ao IBRAM/Harpia.</p>
+<table>
+<tr><th>O que você vê</th><th>Para que serve</th></tr>
+<tr><td><b>Gráficos de barras</b></td><td>Completude (% de tarefas feitas) de cada processo,
+colorida pela fase atual, e quantos processos há em cada passo.</td></tr>
+<tr><td><b>Tabela “situação, o que falta e previsão”</b></td><td>Fase, tarefas feitas,
+dias restantes estimados, data prevista de conclusão, há quantos dias o processo está
+parado e quem é a pessoa responsável.</td></tr>
+<tr><td><b>Ficha do processo</b></td><td>Escolha o processo na lista. Aparecem a fase,
+a completude, a previsão e, em cada passo, as <b>tarefas com caixa de marcação</b>.</td></tr>
+</table>
+<div class="passo"><span class="n">1</span><p>Marque a tarefa feita: a data de hoje e o
+seu nome entram sozinhos (a data pode ser ajustada). Use o campo “observação” para
+registrar o que foi feito (ofício, número SEI, contato com o proprietário).</p></div>
+<div class="passo"><span class="n">2</span><p>Em cada passo, ajuste a <b>duração
+prevista (dias)</b> se a realidade daquele processo for diferente do padrão. É com ela
+que a plataforma calcula a previsão de conclusão.</p></div>
+<div class="passo"><span class="n">3</span><p>Clique em <b>Gravar alterações</b> (alto da
+aba). Enquanto houver alteração não gravada, aparece um aviso amarelo. Sem gravar, as
+marcações se perdem ao fechar a página.</p></div>
+<p><b>Processo novo:</b> use “Novo processo” (nome da RPPN, UF, município, proprietário,
+responsável, data de início e órgão). <b>Importar:</b> a plataforma lista as RPPNs em
+trâmite no SIMRPPN/Harpia que ainda não têm ficha; ao importar, os passos 1 a 3 e a
+abertura do requerimento vêm marcados como <b>presumidos</b> — confira na ficha. Processos
+concluídos ou arquivados saem dos gráficos, mas continuam na lista de fichas.</p>
+
+<h2>11. Quem faz o quê (rotina do Programa Jurema)</h2>
+<table>
+<tr><th>Atividade</th><th>Quem</th><th>Onde</th></tr>
+<tr><td>Abrir o requerimento no SIMRPPN (conta institucional) e <b>vincular a responsável
+técnica como colaboradora</b></td><td>Administrativo</td><td>SIMRPPN</td></tr>
+<tr><td>Conduzir o processo, marcar tarefas e observações, gravar</td><td>Responsável
+técnica</td><td>Plataforma → Processos</td></tr>
+<tr><td>Sincronizar SIMRPPN e Harpia (mensal ou quando houver novidade)</td><td>Responsável
+técnica</td><td>Plataforma → Administrar</td></tr>
+<tr><td>Preparar perímetro, mapa técnico e Excel de coordenadas de uma RPPN
+nova</td><td>Responsável técnica</td><td>Plataforma → abas RPPN a Revisão</td></tr>
+<tr><td>Clicar em “Finalizar requerimento” no SIMRPPN</td><td>Titular da conta (nunca a
+plataforma)</td><td>SIMRPPN</td></tr>
+</table>
+
+<h2>12. Envio ao SIMRPPN</h2>
 <p>Na fase atual, a plataforma prepara e valida tudo. O <b>envio automático ao
 SIMRPPN</b> (com login gov.br) entra na fase 2 — você fará apenas a revisão final e o
 clique de “Finalizar requerimento” no próprio SIMRPPN, que é pessoal e
@@ -231,7 +334,7 @@ irreversível.</p>
 
 </main>
 <footer>Instituto Cerrados · Programa Jurema — Proteção do Cerrado ·
-Plataforma RPPN — Guia do Usuário (v1, julho/2026)</footer>
+Plataforma RPPN — Guia do Usuário (v2, outubro/2026)</footer>
 </div>
 </body>
 </html>

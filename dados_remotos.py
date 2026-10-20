@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import base64
 import json
+import os
 from pathlib import Path
 
 import requests
@@ -18,7 +19,8 @@ import streamlit as st
 
 REPO_PADRAO = "instituto-cerrados-ic/plataforma-rppn-dados"
 API = "https://api.github.com/repos/{repo}/contents/{caminho}"
-DADOS_LOCAL = Path(__file__).resolve().parent / "dados"
+# pasta local (desenvolvimento/testes); PLATAFORMA_DADOS_DIR permite apontar para uma cópia
+DADOS_LOCAL = Path(os.environ.get("PLATAFORMA_DADOS_DIR") or (Path(__file__).resolve().parent / "dados"))
 
 
 def _cfg() -> dict | None:

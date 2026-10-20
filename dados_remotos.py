@@ -67,7 +67,25 @@ def carregar(nome: str):
     """Lê `nome` (ex.: 'rppns.json') -> objeto JSON, ou None se não existe."""
     c = _cfg()
     if c:
-        return _ler_remoto(c["repo"], c["branch"], nome, c["token"])
+        try:
+            return _ler_remoto(c["repo"], c["branch"], nome, c["token"])
+        except requests.HTTPError as e:
+            code = e.response.status_code if e.response is not None else "?"
+            dica = {401: "o token foi recusado (confira se foi colado inteiro, com aspas retas)",
+                    403: "o token não tem permissão neste repositório (Contents: leitura e escrita) "
+                         "ou aguarda aprovação da organização",
+                    404: "o repositório de dados não foi encontrado com este token"}.get(code, "")
+            if not st.session_state.get("_dr_avisado"):
+                st.session_state["_dr_avisado"] = True
+                st.error(f"Não consegui ler os dados do GitHub ({c['repo']}): HTTP {code}. "
+                         + (dica + ". " if dica else "") + "A plataforma segue sem dados até corrigir o "
+                         "bloco [github] nos Secrets.", icon=":material/cloud_off:")
+            return None
+        except Exception as e:
+            if not st.session_state.get("_dr_avisado"):
+                st.session_state["_dr_avisado"] = True
+                st.error(f"Falha ao ler os dados do GitHub: {e}", icon=":material/cloud_off:")
+            return None
     arq = DADOS_LOCAL / nome
     return json.load(open(arq, encoding="utf-8")) if arq.exists() else None
 

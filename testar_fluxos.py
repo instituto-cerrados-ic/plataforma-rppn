@@ -168,9 +168,32 @@ def t_sync_aditiva():
     assert novo.get("harpia_sincronizado_em") == base.get("harpia_sincronizado_em"), "metadado do Harpia perdido"
 
 
+@teste("10. Complementos manuais sobrevivem à sincronização e aparecem no painel")
+def t_complementos():
+    import complementos as CP, sync_ingest as SI
+    base = json.loads((AQUI / "dados" / "rppns.json").read_text(encoding="utf-8"))
+    geo = json.loads((AQUI / "dados" / "rppns.geojson").read_text(encoding="utf-8"))
+    com_poly = {f["properties"]["rppnid"] for f in geo["features"]}
+    sem = next(r for r in base["rppns"] if r["rppnid"] not in com_poly)
+    quad = {"type": "Polygon", "coordinates": [[[-48.1, -15.9], [-48.09, -15.9], [-48.09, -15.89], [-48.1, -15.89], [-48.1, -15.9]]]}
+    comp = CP.definir(CP.vazio(), sem["rppnid"], campos={"municipio": "Teste Manual"}, poligono=quad, por="teste")
+    comp = CP.definir(comp, CP.id_manual("RPPN Só Manual"), campos={"nome": "RPPN Só Manual", "uf": "GO"}, por="teste")
+    rj, gj, info = CP.aplicar(base, geo, comp)
+    assert next(r for r in rj["rppns"] if r["rppnid"] == sem["rppnid"])["municipio"] == "Teste Manual"
+    assert any(f["properties"]["rppnid"] == sem["rppnid"] and f["properties"].get("fonte") == "manual" for f in gj["features"])
+    assert any(r["nome"] == "RPPN Só Manual" for r in rj["rppns"]), "RPPN manual não entrou"
+    # uma sincronização parcial não toca o complemento (arquivo separado) e o resultado continua aplicável
+    payload = {"versao": "t", "rppns": [{"rppnid": sem["rppnid"], "nome": sem["nome"], "uf": sem["uf"],
+                                          "status": sem["status"], "pts_rppn": [], "pts_imovel": []}]}
+    novo, gnovo, _ = SI.processar(payload, "teste", base, geo)
+    rj2, gj2, _ = CP.aplicar(novo, gnovo, comp)
+    assert next(r for r in rj2["rppns"] if r["rppnid"] == sem["rppnid"])["municipio"] == "Teste Manual"
+    assert any(f["properties"]["rppnid"] == sem["rppnid"] for f in gj2["features"]), "polígono manual sumiu após sync"
+
+
 if __name__ == "__main__":
     for fn in [t_abas, t_guia, t_revisao_vazia, t_preencher, t_administrar, t_sync_ui,
-               t_processos, t_processos_gravar, t_sync_aditiva]:
+               t_processos, t_processos_gravar, t_sync_aditiva, t_complementos]:
         fn()
     falhas = 0
     for nome, okk, msg in resultados:

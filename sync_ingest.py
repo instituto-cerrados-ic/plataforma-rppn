@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import base64
 import json
+import re
 from datetime import datetime
 from pathlib import Path
 
@@ -22,11 +23,25 @@ CAMPOS = ["rppnid", "nome", "uf", "status", "municipio", "proprietario",
           "area_rppn_ha", "data_criacao", "data_cadastro", "data_ato", "pagina"]
 
 
+_DMS = re.compile(r"""^\s*(-?)\s*(\d+)\s*[°º]\s*(\d+(?:[.,]\d+)?)\s*['′]\s*(\d+(?:[.,]\d+)?)?\s*["″]?\s*([NSEWOnsewo])?\s*$""")
+
+
 def _num(v):
+    """'725649,96' -> 725649.96 · '-48° 053' 43.796"' (graus/min/seg, como o SIMRPPN
+    guarda os limites em 'Geográfica') -> -48.8955 · senão None."""
+    if v is None:
+        return None
+    s = str(v).strip()
+    m = _DMS.match(s)
+    if m:
+        sinal, g, mi, se, hemi = m.groups()
+        val = float(g) + float(mi.replace(",", ".")) / 60 + (float(se.replace(",", ".")) if se else 0) / 3600
+        if sinal == "-" or (hemi or "").upper() in ("S", "W", "O"):
+            val = -val
+        return val
     try:
-        s = str(v).strip()
         return float(s.replace(".", "").replace(",", ".")) if "," in s else float(s)
-    except (TypeError, ValueError):
+    except ValueError:
         return None
 
 

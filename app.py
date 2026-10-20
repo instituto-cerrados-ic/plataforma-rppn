@@ -1070,6 +1070,9 @@ with abas[8]:
     import sync_ingest as SI
     SI = importlib.reload(SI)
     _meta = DR.carregar("rppns.json") or {}
+    import complementos as CP
+    CP = importlib.reload(CP)
+    _comp = DR.carregar(CP.ARQ) or CP.vazio()
     with st.expander("Sincronizar com o SIMRPPN", expanded=False, icon=":material/sync:"):
         if _meta.get("sincronizado_em"):
             st.caption(f"Última sincronização: **{_meta['sincronizado_em']}**"
@@ -1226,13 +1229,100 @@ with abas[8]:
                         ss.pop("harpia_up", None)
                         st.rerun()
 
+    # ---- Completar dados à mão (polígono ou campos faltantes) ----
+    with st.expander("Completar dados à mão (polígono ou campos que faltam)", expanded=False,
+                     icon=":material/edit_location_alt:"):
+        st.markdown(
+            "Quando o SIMRPPN ou o Harpia não têm um dado (polígono, município, proprietário, data…), "
+            "você pode informá-lo aqui. O que você informa fica guardado **separado** dos dados "
+            "oficiais e **nenhuma sincronização apaga**. Regra: um campo informado à mão prevalece; "
+            "o polígono oficial prevalece quando existir, a menos que você marque a opção abaixo.")
+        _lista = sorted(_meta.get("rppns", []), key=lambda r: str(r.get("nome", "")).lower())
+        _opcoes = {f"{r['nome']} ({r.get('uf','')}) · {r.get('status','')}": r for r in _lista}
+        _NOVA = "— RPPN que não está em nenhum sistema (criar à mão) —"
+        _esc = st.selectbox("RPPN", [_NOVA] + list(_opcoes), index=1 if _opcoes else 0, key="cp_sel")
+        _r = _opcoes.get(_esc)
+        _rid = _r["rppnid"] if _r else None
+        _it = _comp.get("itens", {}).get(str(_rid), {}) if _rid else {}
+        if _it:
+            st.info(f"Esta RPPN já tem complemento ({_it.get('em','')}, por {_it.get('por','')}): "
+                    + (", ".join(_it.get("campos", {}).keys()) or "sem campos")
+                    + (" · polígono manual" if _it.get("poligono") else ""))
+        c1, c2, c3 = st.columns(3)
+        _cv = lambda k: str(_it.get("campos", {}).get(k, "") or "")
+        _nome = c1.text_input("Nome", _cv("nome") if not _r else (_cv("nome") or ""), key="cp_nome",
+                              placeholder=(_r or {}).get("nome", "obrigatório para RPPN nova"))
+        _mun = c2.text_input("Município", _cv("municipio"), key="cp_mun",
+                             placeholder=(_r or {}).get("municipio", "") or "ex.: Pirenópolis")
+        _uf = c3.selectbox("UF", [""] + UFS, index=(UFS.index(_cv("uf")) + 1) if _cv("uf") in UFS else 0,
+                           key="cp_uf", help="Deixe em branco para manter o oficial.")
+        c4, c5, c6 = st.columns(3)
+        _prop = c4.text_input("Proprietário(a)", _cv("proprietario"), key="cp_prop",
+                              placeholder=(_r or {}).get("proprietario", "") or "")
+        _area = c5.text_input("Área da RPPN (ha)", _cv("area_rppn_ha"), key="cp_area",
+                              placeholder=str((_r or {}).get("area_rppn_ha", "") or ""))
+        _dcri = c6.text_input("Data de criação (dd/mm/aaaa)", _cv("data_criacao"), key="cp_dcri",
+                              placeholder=(_r or {}).get("data_criacao", "") or "")
+        c7, c8 = st.columns([1, 2])
+        _stat = c7.selectbox("Status", ["", "criada", "em trâmite", "em cadastro", "arquivada"],
+                             index=["", "criada", "em trâmite", "em cadastro", "arquivada"].index(_cv("status"))
+                             if _cv("status") in ("criada", "em trâmite", "em cadastro", "arquivada") else 0,
+                             key="cp_stat", help="Em branco = manter o oficial.")
+        _obs = c8.text_input("Observação (de onde veio o dado)", _it.get("obs", ""), key="cp_obs",
+                             placeholder="ex.: shapefile do responsável técnico, portaria nº…")
+        st.markdown("**Polígono** (opcional): shapefile em .zip, KML, GeoPackage ou GeoJSON da RPPN.")
+        _up = st.file_uploader("Arquivo do polígono", type=["zip", "kml", "gpkg", "geojson", "json"],
+                               accept_multiple_files=True, key="cp_poly")
+        _poly_geo, _poly_nome = None, ""
+        if _up:
+            try:
+                _g, _epsg = _ler_arquivo_geo(_up)
+                _poly_geo = _reproj(_g, _epsg, 4326).__geo_interface__
+                _poly_nome = ", ".join(f.name for f in _up)
+                _ha = _reproj(_g, _epsg, 5880).area / 1e4
+                st.success(f"Polígono lido: {_ha:,.2f} ha (EPSG {_epsg}).".replace(",", "X").replace(".", ",").replace("X", "."))
+            except Exception as e:
+                st.error(f"Não consegui ler o polígono: {e}")
+        _prev = st.checkbox("Manter o meu polígono mesmo que a sincronização traga um oficial",
+                            value=bool(_it.get("prevalece")), key="cp_prev")
+        b1, b2, _ = st.columns([1.2, 1.2, 3])
+        if b1.button("Gravar complemento", type="primary", icon=":material/save:", key="cp_salvar"):
+            _campos = {"nome": _nome.strip(), "municipio": _mun.strip(), "uf": _uf, "proprietario": _prop.strip(),
+                       "area_rppn_ha": _area.strip(), "data_criacao": _dcri.strip(), "status": _stat}
+            if _campos["area_rppn_ha"]:
+                try:
+                    _campos["area_rppn_ha"] = float(_campos["area_rppn_ha"].replace(".", "").replace(",", "."))
+                except ValueError:
+                    st.error("Área inválida: use números, ex.: 12,5"); st.stop()
+            if _r is None and not _campos["nome"]:
+                st.error("Para uma RPPN nova, informe pelo menos o nome."); st.stop()
+            _rid2 = _rid if _rid is not None else CP.id_manual(_campos["nome"])
+            if not any(_campos.values()) and _poly_geo is None and not _it:
+                st.warning("Nada para gravar: preencha algum campo ou envie um polígono."); st.stop()
+            _por = (st.user.email if _tem_auth and st.user.is_logged_in else "local")
+            CP.definir(_comp, _rid2, campos=_campos, poligono=_poly_geo, prevalece=_prev, por=_por,
+                       obs=_obs.strip(), nome_poligono=_poly_nome)
+            if _publicar_arquivos({CP.ARQ: CP.serializar(_comp)}, f"Complemento manual: {_campos['nome'] or (_r or {}).get('nome','')} ({_por})"):
+                ss.pop("cp_poly", None)
+                st.rerun()
+        if _it and b2.button("Remover complemento", icon=":material/delete:", key="cp_rem"):
+            _por = (st.user.email if _tem_auth and st.user.is_logged_in else "local")
+            CP.remover(_comp, _rid, por=_por)
+            if _publicar_arquivos({CP.ARQ: CP.serializar(_comp)}, f"Remove complemento manual: {(_r or {}).get('nome','')} ({_por})"):
+                st.rerun()
+        if _comp.get("itens"):
+            st.caption("Complementos existentes: " + "; ".join(
+                f"{(next((x['nome'] for x in _meta.get('rppns', []) if str(x.get('rppnid')) == k), None) or it.get('campos', {}).get('nome') or k)}"
+                f" ({', '.join(list(it.get('campos', {}).keys()) + (['polígono'] if it.get('poligono') else []))})"
+                for k, it in _comp["itens"].items()))
+
     # cores diversificadas na identidade Jurema/IC
     CORES_STATUS = {"criada": "#004F23", "em trâmite": "#E85718",
                     "em cadastro": "#E00080", "arquivada": "#603010"}
     PALETA_UF = ["#004F23", "#E85718", "#E00080", "#603010", "#B8860B",
                  "#2E7D32", "#DDCCA4"]
 
-    base = _meta
+    base, _gj_m, _cinfo = CP.aplicar(_meta, DR.carregar("rppns.geojson"), _comp)
     if not base.get("rppns"):
         st.warning("Ainda não há dados de RPPNs. Use **Sincronizar com o SIMRPPN** acima.")
     else:
@@ -1354,8 +1444,8 @@ with abas[8]:
                 tiles="https://server.arcgisonline.com/ArcGIS/rest/services/"
                       "World_Imagery/MapServer/tile/{z}/{y}/{x}",
                 attr="Esri World Imagery", name="Satélite").add_to(madm)
-            gj = DR.carregar("rppns.geojson")
-            if gj:
+            gj = _gj_m
+            if gj and gj.get("features"):
                 ids_visiveis = set(v["rppnid"].dropna().astype(int).tolist()) \
                     if "rppnid" in v else set()
                 feats_v = [f for f in gj["features"]

@@ -310,6 +310,19 @@ Envie o arquivo <code>harpia_&lt;data&gt;.json</code> na plataforma e confirme.<
 <p>Se o Harpia pedir login de novo no meio do caminho, faça o login, volte à tela
 Acompanhamento e clique no favorito outra vez.</p>
 
+<h3>9.3 Completar dados à mão (polígono ou campos que faltam)</h3>
+<p>Quando o SIMRPPN ou o Harpia não têm um dado — o polígono de uma RPPN antiga, o
+município, o proprietário, a data de criação — use <b>Administrar → “Completar dados à
+mão”</b>: escolha a RPPN, preencha só o que falta (o que ficar em branco continua
+oficial), envie o polígono se tiver (shapefile em .zip, KML, GeoPackage ou GeoJSON) e
+clique em <b>Gravar complemento</b>. Dá também para cadastrar uma RPPN que não está em
+sistema nenhum.</p>
+<div class="destaque">O que você informa à mão fica guardado <b>separado</b> dos dados
+oficiais e <b>nenhuma sincronização apaga</b>. Um campo informado à mão prevalece sobre o
+oficial; o polígono oficial prevalece quando existir, a menos que você marque
+“Manter o meu polígono”. Para desfazer, abra a mesma RPPN e clique em
+<b>Remover complemento</b>.</div>
+
 <h2>10. Processos — gestão passo a passo</h2>
 <p>A aba <b>Processos</b> acompanha cada processo de criação de RPPN segundo os
 <b>6 passos</b> do documento <i>Processo de Criação de RPPNs</i> (verificar documentos,

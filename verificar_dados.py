@@ -49,9 +49,12 @@ def _data(s):
 
 def carregar(pasta: Path):
     out = {}
-    for nome in ("rppns.json", "rppns.geojson", "processos.json"):
+    for nome in ("rppns.json", "rppns.geojson", "processos.json", "complementos.json"):
         p = pasta / nome
         if not p.exists():
+            if nome == "complementos.json":
+                out[nome] = None          # opcional: só existe depois do 1º complemento manual
+                continue
             erro(f"{nome}: arquivo ausente em {pasta}")
             out[nome] = None
             continue
@@ -209,6 +212,43 @@ def checar_processos(pj, ids_rppn):
        + (f" · última gravação {pj.get('atualizado_em')} por {pj.get('por')}" if pj.get("atualizado_em") else ""))
 
 
+def checar_complementos(cj, ids_rppn):
+    if not cj:
+        ok("complementos.json: ausente (nenhum dado manual ainda) — opcional")
+        return
+    itens = cj.get("itens")
+    if not isinstance(itens, dict):
+        erro("complementos.json: campo 'itens' ausente")
+        return
+    try:
+        from shapely.geometry import shape
+    except ImportError:
+        shape = None
+    n_poly = 0
+    for sid, it in itens.items():
+        try:
+            rid = int(sid)
+        except ValueError:
+            erro(f"complementos.json: chave '{sid}' não é um rppnid")
+            continue
+        if rid not in ids_rppn and not (it.get("campos") or {}).get("nome"):
+            erro(f"complementos.json: complemento para rppnid {rid} que não existe e sem nome (RPPN manual precisa de nome)")
+        if it.get("poligono"):
+            n_poly += 1
+            if shape:
+                try:
+                    s = shape(it["poligono"])
+                    x0, y0, x1, y1 = s.bounds
+                    if not (BBOX_BR[0] <= x0 and x1 <= BBOX_BR[2] and BBOX_BR[1] <= y0 and y1 <= BBOX_BR[3]):
+                        erro(f"complementos.json: polígono manual de {sid} fora do Brasil")
+                except Exception as e:
+                    erro(f"complementos.json: polígono manual de {sid} ilegível — {e}")
+        if not it.get("por"):
+            aviso(f"complementos.json: complemento {sid} sem autor")
+    ok(f"complementos.json: {len(itens)} complemento(s), {n_poly} com polígono manual; "
+       f"não são tocados pela sincronização")
+
+
 def simular_sync(dados, arquivo: Path):
     """Aplica a sincronização em memória e prova que ela é ADITIVA."""
     sys.path.insert(0, str(AQUI))
@@ -261,6 +301,7 @@ def main():
     ids = checar_rppns(dados["rppns.json"])
     checar_geojson(dados["rppns.geojson"], ids)
     checar_processos(dados["processos.json"], ids)
+    checar_complementos(dados.get("complementos.json"), ids)
     if args.simular_sync:
         simular_sync(dados, Path(args.simular_sync))
     n_err = sum(1 for t, _ in achados if t == "ERRO")

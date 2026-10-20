@@ -843,6 +843,9 @@ with abas[7]:
                                     f"Processos de RPPN atualizados ({_quem})")
             if ok:
                 ss.proc_sujo = False
+                ss.proc_base = DR.carregar("processos.json") or base_p
+                st.toast("Alterações gravadas.", icon=":material/check_circle:")
+                st.rerun()
 
     # ---------- resumo + gráficos ----------
     ativos = [p for p in procs if p.get("situacao", "ativo") == "ativo"]
